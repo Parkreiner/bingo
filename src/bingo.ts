@@ -1,6 +1,26 @@
+/**
+ * The number of cells that two cards are allowed to have in common to still be
+ * called unique from a fun, gameplay standpoint. A unique cell, in this case,
+ * refers to not just the numeric value of a cell, but also the position.
+ *
+ * The number is 2/3 of the total cells of a bingo card (25), excluding the free
+ * space.
+ */
+const UNIQUENESS_THRESHOLD = 16;
+
+/**
+ * The minimum number of cards a player is allowed to have in a game.
+ */
 export const MIN_CARDS = 1;
+
+/**
+ * The maximum number of cards a player is allowed to have in a game.
+ */
 export const MAX_CARDS = 4;
 
+/**
+ * A single, stateless representation of a bingo card.
+ */
 export type BingoCard = Readonly<{
   id: string;
 
@@ -86,6 +106,10 @@ export function generateBingoCells(): readonly number[][] {
   return aggregateCells;
 }
 
+/**
+ * @todo Need to make sure that no two users have the same card once this
+ * logic gets moved to a server
+ */
 export function generateUniqueBingoCards(
   cardCount: number
 ): readonly BingoCard[] {
@@ -94,39 +118,37 @@ export function generateUniqueBingoCards(
     throw new Error(`Received invalid card count ${cardCount}`);
   }
 
-  /**
-   * @todo Probably want to guarantee that only 10-ish cells are allowed to be
-   * the same, just so that there's no risk of a player getting stuck with
-   * multiple really similar cards
-   * @todo Also need to make sure that no two users have the same card
-   */
+  // Five layers of nesting in a loop isn't great, but the input elements are
+  // guaranteed to be small enough that trying to move to a hashmap would
+  // probably make the function perform worse
   const cards: BingoCard[] = [];
   for (let i = 0; i < clamped; i++) {
-    let newCells!: readonly number[][];
+    let newCells: readonly number[][];
+    let cellConflicts: number;
 
-    // Five layers of nesting in a loop isn't great, but the input elements are
-    // guaranteed to be small enough that trying to move to a hashmap would
-    // probably make the function perform worse
-    let newCellsAreUnique = false;
     do {
       newCells = generateBingoCells();
-      newCellsAreUnique = cards.length === 0;
+      cellConflicts = 0;
 
       for (const card of cards) {
         for (const [i, row] of card.cells.entries()) {
-          let rowIsUnique = false;
           for (const [j, cell] of row.entries()) {
+            // Skip over the free space
+            if (cell === -1) {
+              continue;
+            }
+
             const newCell = newCells[i]?.[j];
             if (newCell === undefined) {
               throw new Error(`Went out of bounds at [${i},${j}]`);
             }
-            rowIsUnique = rowIsUnique || cell !== newCell;
+            if (cell === newCell) {
+              cellConflicts++;
+            }
           }
-
-          newCellsAreUnique = newCellsAreUnique || rowIsUnique;
         }
       }
-    } while (!newCellsAreUnique);
+    } while (cellConflicts > UNIQUENESS_THRESHOLD);
 
     cards.push({
       id: String(Math.random()).slice(2),
