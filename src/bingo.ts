@@ -107,9 +107,10 @@ export function generateUniqueBingoCards(
     // Five layers of nesting in a loop isn't great, but the input elements are
     // guaranteed to be small enough that trying to move to a hashmap would
     // probably make the function perform worse
-    while (true) {
+    let newCellsAreUnique = false;
+    do {
       newCells = generateBingoCells();
-      let cardsAreUnique = cards.length === 0;
+      newCellsAreUnique = cards.length === 0;
 
       for (const card of cards) {
         for (const [i, row] of card.cells.entries()) {
@@ -122,14 +123,10 @@ export function generateUniqueBingoCards(
             rowIsUnique = rowIsUnique || cell !== newCell;
           }
 
-          cardsAreUnique = cardsAreUnique || rowIsUnique;
+          newCellsAreUnique = newCellsAreUnique || rowIsUnique;
         }
       }
-
-      if (cardsAreUnique) {
-        break;
-      }
-    }
+    } while (!newCellsAreUnique);
 
     cards.push({
       id: String(Math.random()).slice(2),
