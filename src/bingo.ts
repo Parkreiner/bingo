@@ -1,14 +1,4 @@
 /**
- * The number of cells that two cards are allowed to have in common to still be
- * called unique from a fun, gameplay standpoint. A unique cell, in this case,
- * refers to not just the numeric value of a cell, but also the position.
- *
- * The number is 2/3 of the total cells of a bingo card (25), excluding the free
- * space.
- */
-const UNIQUENESS_THRESHOLD = 16;
-
-/**
  * The minimum number of cards a player is allowed to have in a game.
  */
 export const MIN_CARDS = 1;
@@ -17,6 +7,16 @@ export const MIN_CARDS = 1;
  * The maximum number of cards a player is allowed to have in a game.
  */
 export const MAX_CARDS = 4;
+
+/**
+ * The number of cells that two cards are allowed to have in common to still be
+ * called unique from a fun, gameplay standpoint. A unique cell, in this case,
+ * refers to not just the numeric value of a cell, but also the position.
+ *
+ * The number is 2/3 of the total cells of a bingo card (25), excluding the free
+ * space.
+ */
+const UNIQUENESS_THRESHOLD = 16;
 
 /**
  * A single, stateless representation of a bingo card.
@@ -123,11 +123,11 @@ export function generateUniqueBingoCards(
   // probably make the function perform worse
   const cards: BingoCard[] = [];
   for (let i = 0; i < clamped; i++) {
-    let newCells: readonly number[][];
+    let cells: readonly number[][];
     let cellConflicts: number;
 
     do {
-      newCells = generateBingoCells();
+      cells = generateBingoCells();
       cellConflicts = 0;
 
       for (const card of cards) {
@@ -138,7 +138,7 @@ export function generateUniqueBingoCards(
               continue;
             }
 
-            const newCell = newCells[i]?.[j];
+            const newCell = cells[i]?.[j];
             if (newCell === undefined) {
               throw new Error(`Went out of bounds at [${i},${j}]`);
             }
@@ -150,10 +150,11 @@ export function generateUniqueBingoCards(
       }
     } while (cellConflicts > UNIQUENESS_THRESHOLD);
 
-    cards.push({
-      id: String(Math.random()).slice(2),
-      cells: newCells,
-    });
+    const id = window.isSecureContext
+      ? window.crypto.randomUUID()
+      : String(Math.random()).slice(2);
+
+    cards.push({ id, cells });
   }
 
   return cards;
