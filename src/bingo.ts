@@ -109,7 +109,7 @@ export function generateUniqueBingoCards(
     // probably make the function perform worse
     while (true) {
       newCells = generateBingoCells();
-      let cellsAreUnique = cards.length === 0;
+      let cardsAreUnique = cards.length === 0;
 
       for (const card of cards) {
         for (const [i, row] of card.cells.entries()) {
@@ -122,11 +122,11 @@ export function generateUniqueBingoCards(
             rowIsUnique = rowIsUnique || cell !== newCell;
           }
 
-          cellsAreUnique = cellsAreUnique || rowIsUnique;
+          cardsAreUnique = cardsAreUnique || rowIsUnique;
         }
       }
 
-      if (cellsAreUnique) {
+      if (cardsAreUnique) {
         break;
       }
     }
