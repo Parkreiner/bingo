@@ -1,6 +1,6 @@
 // Package cardregistry defines a centralized registry for generating and using
 // bingo cards, to help ensure that cards remain unique among players, and that
-// cards have some guarantee of being different from each other
+// a player cannot receive multiple cards that are too similar to each other.
 package cardregistry
 
 import (
