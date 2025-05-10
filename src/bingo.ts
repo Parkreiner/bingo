@@ -18,11 +18,17 @@ export const MAX_CARDS = 4;
  */
 const UNIQUENESS_THRESHOLD = 16;
 
+export type BingoCell = Readonly<{
+  value: number;
+  daubed: boolean;
+}>;
+
 /**
  * A single, stateless representation of a bingo card.
  */
 export type BingoCard = Readonly<{
   id: string;
+  ownerId: string;
 
   /**
    * A 5x5 grid of Bingo cells. Each column corresponds to a different
@@ -37,7 +43,7 @@ export type BingoCard = Readonly<{
    *
    * The free space is represented as -1.
    */
-  cells: readonly number[][];
+  cells: readonly BingoCell[][];
 }>;
 
 function shuffleInPlace(input: unknown[]): void {
@@ -59,7 +65,7 @@ function generateCellsForRange(start: number, end: number): number[] {
   return cells;
 }
 
-export function generateBingoCells(): readonly number[][] {
+export function generateBingoCells(): number[][] {
   const allBCells = generateCellsForRange(1, 15);
   const allICells = generateCellsForRange(16, 30);
   const allNCells = generateCellsForRange(31, 45);
@@ -121,17 +127,17 @@ export function generateUniqueBingoCards(
   // Five layers of nesting in a loop isn't great, but the input elements are
   // guaranteed to be small enough that trying to move to a hashmap would
   // probably make the function perform worse
-  const cards: BingoCard[] = [];
+  const statelessCards: number[][][] = [];
   for (let i = 0; i < clamped; i++) {
-    let cells: readonly number[][];
+    let cells: number[][];
     let cellConflicts: number;
 
     do {
       cells = generateBingoCells();
       cellConflicts = 0;
 
-      for (const card of cards) {
-        for (const [i, row] of card.cells.entries()) {
+      for (const card of statelessCards) {
+        for (const [i, row] of card.entries()) {
           for (const [j, cell] of row.entries()) {
             // Skip over the free space
             if (cell === -1) {
@@ -150,12 +156,27 @@ export function generateUniqueBingoCards(
       }
     } while (cellConflicts > UNIQUENESS_THRESHOLD);
 
-    const id = window.isSecureContext
-      ? window.crypto.randomUUID()
-      : String(Math.random()).slice(2);
-
-    cards.push({ id, cells });
+    statelessCards.push(cells);
   }
 
-  return cards;
+  return statelessCards.map((card) => {
+    return {
+      id: window.isSecureContext
+        ? window.crypto.randomUUID()
+        : String(Math.random()).slice(2),
+
+      ownerId: window.isSecureContext
+        ? window.crypto.randomUUID()
+        : String(Math.random()).slice(2),
+
+      cells: card.map<BingoCell[]>((row) => {
+        return row.map((cell) => {
+          return {
+            value: cell,
+            daubed: false,
+          };
+        });
+      }),
+    };
+  });
 }
