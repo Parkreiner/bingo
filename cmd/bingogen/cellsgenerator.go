@@ -8,7 +8,7 @@ type cellsGenerator struct {
 	rng *rand.Rand
 }
 
-func newCardGenerator(seed int64) *cellsGenerator {
+func newCellsGenerator(seed int64) *cellsGenerator {
 	return &cellsGenerator{
 		rng: rand.New(rand.NewSource(seed)),
 	}
@@ -23,22 +23,23 @@ func (cg *cellsGenerator) shuffleCellRange(cells []int) {
 	}
 }
 
-func (cg *cellsGenerator) generateCellsForRange(start int, end int) []int {
-	var cells []int
-	for i := start; i <= end; i++ {
-		cells = append(cells, i)
-	}
-	cg.shuffleCellRange(cells)
-	return cells
-}
-
 func (cg *cellsGenerator) generateCells() [][]int {
-	allBCells := cg.generateCellsForRange(1, 15)
-	allICells := cg.generateCellsForRange(16, 30)
-	allNCells := cg.generateCellsForRange(31, 45)
-	allGCells := cg.generateCellsForRange(46, 60)
-	allOCells := cg.generateCellsForRange(61, 75)
+	// Generate all cells. There might be a way to do this that doesn't involve
+	// generating 10 extra cells per column, but the shuffling approach
+	// guarantees that we cannot ever have duplicate cells in the same column
+	allBCells := generateCellsForRange(1, 15)
+	allICells := generateCellsForRange(16, 30)
+	allNCells := generateCellsForRange(31, 45)
+	allGCells := generateCellsForRange(46, 60)
+	allOCells := generateCellsForRange(61, 75)
 
+	cg.shuffleCellRange(allBCells)
+	cg.shuffleCellRange(allICells)
+	cg.shuffleCellRange(allNCells)
+	cg.shuffleCellRange(allGCells)
+	cg.shuffleCellRange(allOCells)
+
+	// Slice off unneeded cells, and then swap in the free space
 	aggregateCells := [][]int{
 		allBCells[0:5],
 		allICells[0:5],
@@ -62,4 +63,16 @@ func (cg *cellsGenerator) generateCells() [][]int {
 	}
 
 	return aggregateCells
+}
+
+func generateCellsForRange(start int, end int) []int {
+	var cells []int
+	if end <= start {
+		return cells
+	}
+
+	for i := start; i <= end; i++ {
+		cells = append(cells, i)
+	}
+	return cells
 }

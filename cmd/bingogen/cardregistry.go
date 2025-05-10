@@ -56,7 +56,7 @@ func NewCardRegistry(rngSeed int64) *CardRegistry {
 		registeredEntries: nil,
 		entriesMtx:        &sync.Mutex{},
 		statusMtx:         &sync.RWMutex{},
-		generator:         newCardGenerator(rngSeed),
+		generator:         newCellsGenerator(rngSeed),
 		doneChan:          make(chan struct{}),
 		returnChan:        make(chan *bingo.BingoCard, 1),
 		surplusTicker:     nil,
@@ -248,6 +248,19 @@ func (cg *CardRegistry) CheckOutCard(playerID uuid.UUID) (*bingo.BingoCard, erro
 	}
 	if status == cardGenStatusTerminated {
 		return nil, errors.New("tried generating card for terminated CardGen")
+	}
+
+	cg.entriesMtx.Lock()
+	playerCards := 0
+	for _, entry := range cg.registeredEntries {
+		if slices.Contains(entry.prevPlayerIDs, playerID) {
+			playerCards++
+		}
+	}
+	cg.entriesMtx.Unlock()
+
+	if playerCards >= bingo.MaxCards {
+		return nil, errors.New("player cannot check out any more cards")
 	}
 
 	var activeEntry *registryEntry
