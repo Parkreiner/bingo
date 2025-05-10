@@ -79,6 +79,10 @@ function App() {
     queryFn: () => simulateServerCall(sessionId),
   });
 
+  if (query.isLoading) {
+    return <p>Loading&hellip;</p>;
+  }
+
   return (
     <>
       <div>
