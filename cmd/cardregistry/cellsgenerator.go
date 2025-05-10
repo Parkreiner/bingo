@@ -1,53 +1,44 @@
 package cardregistry
 
 import (
-	"math/rand"
+	"github.com/Parkreiner/bingo"
+	"github.com/Parkreiner/bingo/cmd/bingoshuffler"
 )
 
 type cellsGenerator struct {
-	rng *rand.Rand
+	shuffler *bingoshuffler.Shuffler
 }
 
 func newCellsGenerator(seed int64) *cellsGenerator {
 	return &cellsGenerator{
-		rng: rand.New(rand.NewSource(seed)),
+		shuffler: bingoshuffler.NewShuffler(seed),
 	}
 }
 
-func (cg *cellsGenerator) shuffleCellRange(cells []int8) {
-	for i := len(cells) - 1; i >= 1; i-- {
-		randomIndex := cg.rng.Intn(i + 1)
-		elementToSwap := cells[i]
-		cells[i] = cells[randomIndex]
-		cells[randomIndex] = elementToSwap
-	}
-}
-
-func (cg *cellsGenerator) generateCells() [][]int8 {
+func (cg *cellsGenerator) generateCells() [][]bingo.Ball {
 	// Generate all cells. There might be a way to do this that doesn't involve
 	// generating 10 extra cells per column, but the shuffling approach
 	// guarantees that we cannot ever have duplicate cells in the same column
-	allBCells := generateCellsForRange(1, 15)
-	allICells := generateCellsForRange(16, 30)
-	allNCells := generateCellsForRange(31, 45)
-	allGCells := generateCellsForRange(46, 60)
-	allOCells := generateCellsForRange(61, 75)
+	allBCells := bingo.GenerateBingoBallsForRange(1, 15)
+	allICells := bingo.GenerateBingoBallsForRange(16, 30)
+	allNCells := bingo.GenerateBingoBallsForRange(31, 45)
+	allGCells := bingo.GenerateBingoBallsForRange(46, 60)
+	allOCells := bingo.GenerateBingoBallsForRange(61, 75)
 
-	cg.shuffleCellRange(allBCells)
-	cg.shuffleCellRange(allICells)
-	cg.shuffleCellRange(allNCells)
-	cg.shuffleCellRange(allGCells)
-	cg.shuffleCellRange(allOCells)
+	cg.shuffler.ShuffleBingoBalls(allBCells)
+	cg.shuffler.ShuffleBingoBalls(allICells)
+	cg.shuffler.ShuffleBingoBalls(allNCells)
+	cg.shuffler.ShuffleBingoBalls(allGCells)
+	cg.shuffler.ShuffleBingoBalls(allOCells)
 
-	// Slice off unneeded cells, and then swap in the free space
-	aggregateCells := [][]int8{
+	aggregateCells := [][]bingo.Ball{
 		allBCells[0:5],
 		allICells[0:5],
 		allNCells[0:5],
 		allGCells[0:5],
 		allOCells[0:5],
 	}
-	aggregateCells[2][2] = -1
+	aggregateCells[2][2] = bingo.FreeSpace
 
 	// Rotate the card so that it looks like a proper bingo card, and so that
 	// fewer data transformations need to be done per render in the frontend
@@ -63,16 +54,4 @@ func (cg *cellsGenerator) generateCells() [][]int8 {
 	}
 
 	return aggregateCells
-}
-
-func generateCellsForRange(start int8, end int8) []int8 {
-	var cells []int8
-	if end <= start {
-		return cells
-	}
-
-	for i := start; i <= end; i++ {
-		cells = append(cells, i)
-	}
-	return cells
 }
