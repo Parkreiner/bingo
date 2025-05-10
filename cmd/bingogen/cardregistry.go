@@ -4,6 +4,7 @@ import (
 	"errors"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/Parkreiner/bingo"
 	"github.com/google/uuid"
@@ -18,8 +19,13 @@ import (
 // free space.
 const uniquenessThreshold = 16
 
+const minEntrySurplus = 6 * bingo.MaxCards
+const maxEntrySurplus = 20 * bingo.MaxCards
+
 type registryEntry struct {
-	cells         [][]int
+	// Should be treated as 100% immutable
+	cells [][]int
+	// Should be treated as 100% immutable
 	id            uuid.UUID
 	prevPlayerIDs []uuid.UUID
 	active        bool
@@ -41,6 +47,7 @@ type CardRegistry struct {
 	generator         *cellsGenerator
 	doneChan          chan struct{}
 	returnChan        chan *bingo.BingoCard
+	surplusTicker     *time.Ticker
 }
 
 func NewCardRegistry(rngSeed int64) *CardRegistry {
@@ -52,13 +59,62 @@ func NewCardRegistry(rngSeed int64) *CardRegistry {
 		generator:         newCardGenerator(rngSeed),
 		doneChan:          make(chan struct{}),
 		returnChan:        make(chan *bingo.BingoCard, 1),
+		surplusTicker:     nil,
 	}
 }
 
-func (cg *CardRegistry) getStatus() cardRegistryStatus {
+func (cg *CardRegistry) Status() cardRegistryStatus {
 	cg.statusMtx.RLock()
 	defer cg.statusMtx.Unlock()
 	return cg.status
+}
+
+// This is meant to be a background operation, so we need to be very mindful of
+// how long we keep things locked, especially since we'll be doing generation
+// logic here
+func (cg *CardRegistry) equalizeEntrySurplus() {
+	// Add any needed surplus
+	availableCards := 0
+	for availableCards < minEntrySurplus {
+		availableCards = 0
+
+		cg.entriesMtx.Lock()
+		for _, entry := range cg.registeredEntries {
+			if !entry.active {
+				availableCards++
+			}
+		}
+		cg.entriesMtx.Unlock()
+
+		_ = cg.generateUniqueEntry()
+	}
+
+	// Prune any extra surplus - there is a small risk that the value of
+	// availableCards could get inaccurate by the time we do this if branch, but
+	// that	shouldn't be a huge deal
+	if availableCards < maxEntrySurplus {
+		return
+	}
+	cg.entriesMtx.Lock()
+	defer cg.entriesMtx.Unlock()
+	slices.SortFunc(cg.registeredEntries, func(e1 *registryEntry, e2 *registryEntry) int {
+		if e1.active && !e2.active {
+			return -1
+		}
+		if e2.active && !e1.active {
+			return 1
+		}
+		return 0
+	})
+
+	var endIndex int
+	for endIndex = len(cg.registeredEntries) - 1; endIndex >= 0; endIndex-- {
+		entry := cg.registeredEntries[endIndex]
+		if entry.active {
+			break
+		}
+	}
+	cg.registeredEntries = cg.registeredEntries[0 : endIndex+1]
 }
 
 func (cg *CardRegistry) flushReturn(card *bingo.BingoCard) {
@@ -78,16 +134,16 @@ func (cg *CardRegistry) flushReturn(card *bingo.BingoCard) {
 }
 
 func (cg *CardRegistry) Start() (func(), error) {
+	status := cg.Status()
+	if status == cardGenStatusTerminated {
+		return nil, errors.New("trying to start terminated CardGen")
+	}
+
 	cleanup := func() {
 		select {
 		case cg.doneChan <- struct{}{}:
 		default:
 		}
-	}
-
-	status := cg.getStatus()
-	if status == cardGenStatusTerminated {
-		return nil, errors.New("trying to start terminated CardGen")
 	}
 	if status == cardGenStatusRunning {
 		return cleanup, nil
@@ -96,6 +152,8 @@ func (cg *CardRegistry) Start() (func(), error) {
 	cg.statusMtx.Lock()
 	defer cg.statusMtx.Unlock()
 	cg.status = cardGenStatusRunning
+	cg.equalizeEntrySurplus()
+	cg.surplusTicker = time.NewTicker(5 * time.Second)
 
 	go func() {
 		defer func() {
@@ -103,6 +161,7 @@ func (cg *CardRegistry) Start() (func(), error) {
 			defer cg.statusMtx.Unlock()
 			cg.status = cardGenStatusTerminated
 			close(cg.returnChan)
+			cg.surplusTicker.Stop()
 		}()
 
 	loop:
@@ -112,6 +171,8 @@ func (cg *CardRegistry) Start() (func(), error) {
 				break loop
 			case returnedCard := <-cg.returnChan:
 				cg.flushReturn(returnedCard)
+			case <-cg.surplusTicker.C:
+				cg.equalizeEntrySurplus()
 			}
 		}
 	}()
@@ -120,24 +181,22 @@ func (cg *CardRegistry) Start() (func(), error) {
 }
 
 func (cg *CardRegistry) generateUniqueEntry() *registryEntry {
-	// Generating unique cards has a chance to take a while. Rather than let the
-	// mutex stay locked the entire time, we can grab copies of the existing
-	// cards and then unlock right after, so that other consumers can keep
-	// accessing the registry while the generation is happening
+	// Looked into trying to split up the unlocking logic, since there's a
+	// chance that the uniqueness generation could take a while. That felt way
+	// too risky, since even if we lock in two steps (once for grabbing
+	// comparison snapshots, and again for appending the entry), there would be
+	// a period of time when another consumer could generate a new card that
+	// violates the uniqueness criteria of the card we just generated. Better to
+	// stay locked the entire time to make race conditions impossible
 	cg.entriesMtx.Lock()
-	var cellSnapshots [][][]int
-	for _, entry := range cg.registeredEntries {
-		cellSnapshots = append(cellSnapshots, entry.cells)
-	}
-	cg.entriesMtx.Unlock()
-
+	defer cg.entriesMtx.Unlock()
 	var newCells [][]int
 	for {
 		newCells = cg.generator.generateCells()
 		cellConflicts := 0
 
-		for _, snap := range cellSnapshots {
-			for i, row := range snap {
+		for _, entry := range cg.registeredEntries {
+			for i, row := range entry.cells {
 				for j, cell := range row {
 					// Skip over the free space
 					if cell == -1 {
@@ -157,12 +216,14 @@ func (cg *CardRegistry) generateUniqueEntry() *registryEntry {
 		}
 	}
 
-	return &registryEntry{
+	newEntry := &registryEntry{
 		cells:         newCells,
 		id:            uuid.New(),
 		prevPlayerIDs: nil,
 		active:        false,
 	}
+	cg.registeredEntries = append(cg.registeredEntries, newEntry)
+	return newEntry
 }
 
 func (cg *CardRegistry) checkOutRecycledEntry(playerID uuid.UUID) *registryEntry {
@@ -181,7 +242,7 @@ func (cg *CardRegistry) checkOutRecycledEntry(playerID uuid.UUID) *registryEntry
 }
 
 func (cg *CardRegistry) CheckOutCard(playerID uuid.UUID) (*bingo.BingoCard, error) {
-	status := cg.getStatus()
+	status := cg.Status()
 	if status == cardGenStatusIdle {
 		return nil, errors.New("must Start CardGen before calling other methods")
 	}
@@ -199,7 +260,6 @@ func (cg *CardRegistry) CheckOutCard(playerID uuid.UUID) (*bingo.BingoCard, erro
 		cg.entriesMtx.Lock()
 		activeEntry.active = true
 		activeEntry.prevPlayerIDs = append(activeEntry.prevPlayerIDs, playerID)
-		cg.registeredEntries = append(cg.registeredEntries, activeEntry)
 		cg.entriesMtx.Unlock()
 	}
 
@@ -223,7 +283,7 @@ func (cg *CardRegistry) CheckOutCard(playerID uuid.UUID) (*bingo.BingoCard, erro
 }
 
 func (cg *CardRegistry) ReturnCard(card *bingo.BingoCard) error {
-	status := cg.getStatus()
+	status := cg.Status()
 	if status == cardGenStatusIdle {
 		return errors.New("must Start CardGen before returning card")
 	}
