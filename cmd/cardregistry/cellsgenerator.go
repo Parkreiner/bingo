@@ -1,4 +1,4 @@
-package bingogen
+package cardregistry
 
 import (
 	"math/rand"
