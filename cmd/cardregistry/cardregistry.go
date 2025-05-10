@@ -5,6 +5,7 @@ package cardregistry
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 	"sync"
 	"time"
@@ -21,6 +22,10 @@ import (
 // The number is 2/3 of the total cells of a bingo card (25), excluding the
 // free space.
 const uniquenessThreshold = 16
+
+// Indicates the maximum number of attempts that the CardRegistry is able to
+// make at creating a single unique bingo card in one sitting
+const maxGenAttempts = 256
 
 // The minimum surplus allowed by a CardRegistry. Should generally be some
 // multiple of the max number of cards a player can have, so that multiple
@@ -119,7 +124,7 @@ func (cr *CardRegistry) equalizeEntrySurplus() {
 		cr.entriesMtx.Unlock()
 
 		if availableCards < minEntrySurplus {
-			_ = cr.generateUniqueEntry()
+			_, _ = cr.generateUniqueEntry()
 		}
 	}
 
@@ -221,7 +226,7 @@ func (cr *CardRegistry) Start() (func(), error) {
 // generateUniqueEntry creates a new entry for the registry, making sure that it
 // follows some requirements for being unique relative to all other registered
 // cards.
-func (cr *CardRegistry) generateUniqueEntry() *registryBingoCard {
+func (cr *CardRegistry) generateUniqueEntry() (*registryBingoCard, error) {
 	// Looked into trying to split up the unlocking logic, since there's a
 	// chance that the uniqueness generation could take a while. That felt way
 	// too risky, since even if we lock in two steps (once for grabbing
@@ -231,8 +236,10 @@ func (cr *CardRegistry) generateUniqueEntry() *registryBingoCard {
 	// stay locked the entire time to make race conditions impossible
 	cr.entriesMtx.Lock()
 	defer cr.entriesMtx.Unlock()
+
 	var newCells [][]int8
-	for {
+	var attempts int
+	for attempts = 1; attempts <= maxGenAttempts; attempts++ {
 		newCells = cr.generator.generateCells()
 		cellConflicts := 0
 
@@ -257,6 +264,10 @@ func (cr *CardRegistry) generateUniqueEntry() *registryBingoCard {
 		}
 	}
 
+	if attempts > maxGenAttempts {
+		return nil, errors.New("ran out of attempts to generate new bingo card")
+	}
+
 	newEntry := &registryBingoCard{
 		cells:         newCells,
 		id:            uuid.New(),
@@ -264,7 +275,7 @@ func (cr *CardRegistry) generateUniqueEntry() *registryBingoCard {
 		checkedOut:    false,
 	}
 	cr.registeredEntries = append(cr.registeredEntries, newEntry)
-	return newEntry
+	return newEntry, nil
 }
 
 // checkOutRecycledEntry tries to check out an existing bingo card that is not
@@ -289,7 +300,8 @@ func (cr *CardRegistry) checkOutRecycledEntry(playerID uuid.UUID) *registryBingo
 // CheckOutCard lets a player check out a new, stateful bingo card. The bingo
 // card is guaranteed to have a minimum threshold for uniqueness compared to all
 // bingo cards that the player has used already. Errors if the method is called
-// while CardRegistry is not running.
+// while CardRegistry is not running, or if the Registry cannot find a card for
+// the player.
 func (cr *CardRegistry) CheckOutCard(playerID uuid.UUID) (*bingo.BingoCard, error) {
 	status := cr.getStatus()
 	if status == statusIdle {
@@ -317,7 +329,10 @@ func (cr *CardRegistry) CheckOutCard(playerID uuid.UUID) (*bingo.BingoCard, erro
 	if reusable != nil {
 		activeEntry = reusable
 	} else {
-		activeEntry = cr.generateUniqueEntry()
+		activeEntry, err := cr.generateUniqueEntry()
+		if err != nil {
+			return nil, fmt.Errorf("CheckOutCard: %v", err)
+		}
 
 		cr.entriesMtx.Lock()
 		activeEntry.checkedOut = true
