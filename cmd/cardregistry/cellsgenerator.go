@@ -14,7 +14,7 @@ func newCellsGenerator(seed int64) *cellsGenerator {
 	}
 }
 
-func (cg *cellsGenerator) shuffleCellRange(cells []int) {
+func (cg *cellsGenerator) shuffleCellRange(cells []int8) {
 	for i := len(cells) - 1; i >= 1; i-- {
 		randomIndex := cg.rng.Intn(i + 1)
 		elementToSwap := cells[i]
@@ -23,7 +23,7 @@ func (cg *cellsGenerator) shuffleCellRange(cells []int) {
 	}
 }
 
-func (cg *cellsGenerator) generateCells() [][]int {
+func (cg *cellsGenerator) generateCells() [][]int8 {
 	// Generate all cells. There might be a way to do this that doesn't involve
 	// generating 10 extra cells per column, but the shuffling approach
 	// guarantees that we cannot ever have duplicate cells in the same column
@@ -40,7 +40,7 @@ func (cg *cellsGenerator) generateCells() [][]int {
 	cg.shuffleCellRange(allOCells)
 
 	// Slice off unneeded cells, and then swap in the free space
-	aggregateCells := [][]int{
+	aggregateCells := [][]int8{
 		allBCells[0:5],
 		allICells[0:5],
 		allNCells[0:5],
@@ -65,8 +65,8 @@ func (cg *cellsGenerator) generateCells() [][]int {
 	return aggregateCells
 }
 
-func generateCellsForRange(start int, end int) []int {
-	var cells []int
+func generateCellsForRange(start int8, end int8) []int8 {
+	var cells []int8
 	if end <= start {
 		return cells
 	}

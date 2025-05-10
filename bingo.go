@@ -11,9 +11,11 @@ const (
 )
 
 type BingoCell struct {
-	// It is assumed that once a full card has been created, Value will remain
-	// 100% static for as long as the card remains active in the game
-	Value  int
+	// The numeric value of a cell. It is assumed that once a full card has been
+	// created, Number will remain 100% static for as long as the card remains
+	// active in the game
+	Number int8
+	// Indicates whether a player has marked the cell with a virtual dauber
 	Daubed bool
 }
 

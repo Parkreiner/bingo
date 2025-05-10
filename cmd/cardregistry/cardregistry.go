@@ -24,7 +24,7 @@ const maxEntrySurplus = 20 * bingo.MaxCards
 
 type registryEntry struct {
 	// Should be treated as 100% immutable
-	cells [][]int
+	cells [][]int8
 	// Should be treated as 100% immutable
 	id            uuid.UUID
 	prevPlayerIDs []uuid.UUID
@@ -190,7 +190,7 @@ func (cg *CardRegistry) generateUniqueEntry() *registryEntry {
 	// stay locked the entire time to make race conditions impossible
 	cg.entriesMtx.Lock()
 	defer cg.entriesMtx.Unlock()
-	var newCells [][]int
+	var newCells [][]int8
 	for {
 		newCells = cg.generator.generateCells()
 		cellConflicts := 0
@@ -282,7 +282,7 @@ func (cg *CardRegistry) CheckOutCard(playerID uuid.UUID) (*bingo.BingoCard, erro
 		for _, cell := range row {
 			statefulRow = append(statefulRow, &bingo.BingoCell{
 				Daubed: false,
-				Value:  cell,
+				Number: cell,
 			})
 		}
 		statefulCells = append(statefulCells, statefulRow)
@@ -296,6 +296,10 @@ func (cg *CardRegistry) CheckOutCard(playerID uuid.UUID) (*bingo.BingoCard, erro
 }
 
 func (cg *CardRegistry) ReturnCard(card *bingo.BingoCard) error {
+	if card == nil {
+		return errors.New("trying to return nil bingo card")
+	}
+
 	status := cg.Status()
 	if status == cardGenStatusIdle {
 		return errors.New("must Start CardGen before returning card")
