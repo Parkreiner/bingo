@@ -63,30 +63,30 @@ func NewCardRegistry(rngSeed int64) *CardRegistry {
 	}
 }
 
-func (cg *CardRegistry) Status() cardRegistryStatus {
-	cg.statusMtx.RLock()
-	defer cg.statusMtx.Unlock()
-	return cg.status
+func (cr *CardRegistry) Status() cardRegistryStatus {
+	cr.statusMtx.RLock()
+	defer cr.statusMtx.Unlock()
+	return cr.status
 }
 
 // This is meant to be a background operation, so we need to be very mindful of
 // how long we keep things locked, especially since we'll be doing generation
 // logic here
-func (cg *CardRegistry) equalizeEntrySurplus() {
+func (cr *CardRegistry) equalizeEntrySurplus() {
 	// Add any needed surplus
 	availableCards := 0
 	for availableCards < minEntrySurplus {
 		availableCards = 0
 
-		cg.entriesMtx.Lock()
-		for _, entry := range cg.registeredEntries {
+		cr.entriesMtx.Lock()
+		for _, entry := range cr.registeredEntries {
 			if !entry.active {
 				availableCards++
 			}
 		}
-		cg.entriesMtx.Unlock()
+		cr.entriesMtx.Unlock()
 
-		_ = cg.generateUniqueEntry()
+		_ = cr.generateUniqueEntry()
 	}
 
 	// Prune any extra surplus - there is a small risk that the value of
@@ -95,9 +95,9 @@ func (cg *CardRegistry) equalizeEntrySurplus() {
 	if availableCards < maxEntrySurplus {
 		return
 	}
-	cg.entriesMtx.Lock()
-	defer cg.entriesMtx.Unlock()
-	slices.SortFunc(cg.registeredEntries, func(e1 *registryEntry, e2 *registryEntry) int {
+	cr.entriesMtx.Lock()
+	defer cr.entriesMtx.Unlock()
+	slices.SortFunc(cr.registeredEntries, func(e1 *registryEntry, e2 *registryEntry) int {
 		if e1.active && !e2.active {
 			return -1
 		}
@@ -108,24 +108,24 @@ func (cg *CardRegistry) equalizeEntrySurplus() {
 	})
 
 	var endIndex int
-	for endIndex = len(cg.registeredEntries) - 1; endIndex >= 0; endIndex-- {
-		entry := cg.registeredEntries[endIndex]
+	for endIndex = len(cr.registeredEntries) - 1; endIndex >= 0; endIndex-- {
+		entry := cr.registeredEntries[endIndex]
 		if entry.active {
 			break
 		}
 	}
-	cg.registeredEntries = cg.registeredEntries[0 : endIndex+1]
+	cr.registeredEntries = cr.registeredEntries[0 : endIndex+1]
 }
 
-func (cg *CardRegistry) flushReturn(card *bingo.BingoCard) {
+func (cr *CardRegistry) flushReturn(card *bingo.BingoCard) {
 	if card == nil {
 		return
 	}
 
-	cg.entriesMtx.Lock()
-	defer cg.entriesMtx.Unlock()
+	cr.entriesMtx.Lock()
+	defer cr.entriesMtx.Unlock()
 
-	for _, entry := range cg.registeredEntries {
+	for _, entry := range cr.registeredEntries {
 		if card.ID == entry.id {
 			entry.active = false
 			break
@@ -133,15 +133,15 @@ func (cg *CardRegistry) flushReturn(card *bingo.BingoCard) {
 	}
 }
 
-func (cg *CardRegistry) Start() (func(), error) {
-	status := cg.Status()
+func (cr *CardRegistry) Start() (func(), error) {
+	status := cr.Status()
 	if status == cardGenStatusTerminated {
 		return nil, errors.New("trying to start terminated CardGen")
 	}
 
 	cleanup := func() {
 		select {
-		case cg.doneChan <- struct{}{}:
+		case cr.doneChan <- struct{}{}:
 		default:
 		}
 	}
@@ -149,30 +149,30 @@ func (cg *CardRegistry) Start() (func(), error) {
 		return cleanup, nil
 	}
 
-	cg.statusMtx.Lock()
-	defer cg.statusMtx.Unlock()
-	cg.status = cardGenStatusRunning
-	cg.equalizeEntrySurplus()
-	cg.surplusTicker = time.NewTicker(5 * time.Second)
+	cr.statusMtx.Lock()
+	defer cr.statusMtx.Unlock()
+	cr.status = cardGenStatusRunning
+	cr.equalizeEntrySurplus()
+	cr.surplusTicker = time.NewTicker(5 * time.Second)
 
 	go func() {
 		defer func() {
-			cg.statusMtx.Lock()
-			defer cg.statusMtx.Unlock()
-			cg.status = cardGenStatusTerminated
-			close(cg.returnChan)
-			cg.surplusTicker.Stop()
+			cr.statusMtx.Lock()
+			defer cr.statusMtx.Unlock()
+			cr.status = cardGenStatusTerminated
+			close(cr.returnChan)
+			cr.surplusTicker.Stop()
 		}()
 
 	loop:
 		for {
 			select {
-			case <-cg.doneChan:
+			case <-cr.doneChan:
 				break loop
-			case returnedCard := <-cg.returnChan:
-				cg.flushReturn(returnedCard)
-			case <-cg.surplusTicker.C:
-				cg.equalizeEntrySurplus()
+			case returnedCard := <-cr.returnChan:
+				cr.flushReturn(returnedCard)
+			case <-cr.surplusTicker.C:
+				cr.equalizeEntrySurplus()
 			}
 		}
 	}()
@@ -180,7 +180,7 @@ func (cg *CardRegistry) Start() (func(), error) {
 	return cleanup, nil
 }
 
-func (cg *CardRegistry) generateUniqueEntry() *registryEntry {
+func (cr *CardRegistry) generateUniqueEntry() *registryEntry {
 	// Looked into trying to split up the unlocking logic, since there's a
 	// chance that the uniqueness generation could take a while. That felt way
 	// too risky, since even if we lock in two steps (once for grabbing
@@ -188,14 +188,14 @@ func (cg *CardRegistry) generateUniqueEntry() *registryEntry {
 	// a period of time when another consumer could generate a new card that
 	// violates the uniqueness criteria of the card we just generated. Better to
 	// stay locked the entire time to make race conditions impossible
-	cg.entriesMtx.Lock()
-	defer cg.entriesMtx.Unlock()
+	cr.entriesMtx.Lock()
+	defer cr.entriesMtx.Unlock()
 	var newCells [][]int8
 	for {
-		newCells = cg.generator.generateCells()
+		newCells = cr.generator.generateCells()
 		cellConflicts := 0
 
-		for _, entry := range cg.registeredEntries {
+		for _, entry := range cr.registeredEntries {
 			for i, row := range entry.cells {
 				for j, cell := range row {
 					// Skip over the free space
@@ -222,15 +222,15 @@ func (cg *CardRegistry) generateUniqueEntry() *registryEntry {
 		prevPlayerIDs: nil,
 		active:        false,
 	}
-	cg.registeredEntries = append(cg.registeredEntries, newEntry)
+	cr.registeredEntries = append(cr.registeredEntries, newEntry)
 	return newEntry
 }
 
-func (cg *CardRegistry) checkOutRecycledEntry(playerID uuid.UUID) *registryEntry {
-	cg.entriesMtx.Lock()
-	defer cg.entriesMtx.Unlock()
+func (cr *CardRegistry) checkOutRecycledEntry(playerID uuid.UUID) *registryEntry {
+	cr.entriesMtx.Lock()
+	defer cr.entriesMtx.Unlock()
 
-	for _, entry := range cg.registeredEntries {
+	for _, entry := range cr.registeredEntries {
 		foundReusable := !entry.active && !slices.Contains(entry.prevPlayerIDs, playerID)
 		if foundReusable {
 			entry.active = true
@@ -241,8 +241,8 @@ func (cg *CardRegistry) checkOutRecycledEntry(playerID uuid.UUID) *registryEntry
 	return nil
 }
 
-func (cg *CardRegistry) CheckOutCard(playerID uuid.UUID) (*bingo.BingoCard, error) {
-	status := cg.Status()
+func (cr *CardRegistry) CheckOutCard(playerID uuid.UUID) (*bingo.BingoCard, error) {
+	status := cr.Status()
 	if status == cardGenStatusIdle {
 		return nil, errors.New("must Start CardGen before calling other methods")
 	}
@@ -250,30 +250,30 @@ func (cg *CardRegistry) CheckOutCard(playerID uuid.UUID) (*bingo.BingoCard, erro
 		return nil, errors.New("tried generating card for terminated CardGen")
 	}
 
-	cg.entriesMtx.Lock()
+	cr.entriesMtx.Lock()
 	playerCards := 0
-	for _, entry := range cg.registeredEntries {
+	for _, entry := range cr.registeredEntries {
 		if slices.Contains(entry.prevPlayerIDs, playerID) {
 			playerCards++
 		}
 	}
-	cg.entriesMtx.Unlock()
+	cr.entriesMtx.Unlock()
 
 	if playerCards >= bingo.MaxCards {
 		return nil, errors.New("player cannot check out any more cards")
 	}
 
 	var activeEntry *registryEntry
-	reusable := cg.checkOutRecycledEntry(playerID)
+	reusable := cr.checkOutRecycledEntry(playerID)
 	if reusable != nil {
 		activeEntry = reusable
 	} else {
-		activeEntry = cg.generateUniqueEntry()
+		activeEntry = cr.generateUniqueEntry()
 
-		cg.entriesMtx.Lock()
+		cr.entriesMtx.Lock()
 		activeEntry.active = true
 		activeEntry.prevPlayerIDs = append(activeEntry.prevPlayerIDs, playerID)
-		cg.entriesMtx.Unlock()
+		cr.entriesMtx.Unlock()
 	}
 
 	var statefulCells [][]*bingo.BingoCell
