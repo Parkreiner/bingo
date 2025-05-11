@@ -1,6 +1,6 @@
 // Package bingoshuffler defines a tool for shuffling bingo balls in
 // pseudo-random, seed-based ways.
-package bingoshuffler
+package shuffler
 
 import (
 	"math/rand"

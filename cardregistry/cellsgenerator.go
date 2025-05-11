@@ -2,16 +2,16 @@ package cardregistry
 
 import (
 	"github.com/Parkreiner/bingo"
-	"github.com/Parkreiner/bingo/cmd/bingoshuffler"
+	"github.com/Parkreiner/bingo/shuffler"
 )
 
 type cellsGenerator struct {
-	shuffler *bingoshuffler.Shuffler
+	shuffler *shuffler.Shuffler
 }
 
 func newCellsGenerator(seed int64) *cellsGenerator {
 	return &cellsGenerator{
-		shuffler: bingoshuffler.NewShuffler(seed),
+		shuffler: shuffler.NewShuffler(seed),
 	}
 }
 

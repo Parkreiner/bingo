@@ -1,6 +1,6 @@
-// Package bingoballregistry manages the list of active bingo balls in a round
-// of bingo.
-package bingoballregistry
+// Package ballregistry manages the list of active bingo balls in one round of
+// bingo.
+package ballregistry
 
 import (
 	"errors"
@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	"github.com/Parkreiner/bingo"
-	"github.com/Parkreiner/bingo/cmd/bingoshuffler"
+	"github.com/Parkreiner/bingo/shuffler"
 )
 
 // Registry manages all bingo balls in a round of bingo. The Registry can be
@@ -16,13 +16,13 @@ import (
 type Registry struct {
 	called   []bingo.Ball
 	uncalled []bingo.Ball
-	shuffler *bingoshuffler.Shuffler
+	shuffler *shuffler.Shuffler
 	mtx      *sync.Mutex
 }
 
 // NewRegistry creates a new instance of a bingo ball registry
 func NewRegistry(rngSeed int64) *Registry {
-	shuffler := bingoshuffler.NewShuffler(rngSeed)
+	shuffler := shuffler.NewShuffler(rngSeed)
 	uncalled := bingo.GenerateBingoBallsForRange(1, 75)
 	shuffler.ShuffleBingoBalls(uncalled)
 
