@@ -1,0 +1,25 @@
+package bingo
+
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
+
+// GameEventType indicates the type and context of a new event's message
+type GameEventType string
+
+const (
+	EventTypeGameUpdate GameEventType = "game_update"
+	EventTypeError      GameEventType = "error"
+)
+
+type GameEvent struct {
+	ID                uuid.UUID     `json:"id"`
+	EventType         GameEventType `json:"event_type"`
+	CreationTimestamp time.Time     `json:"creation_timestamp"`
+	Message           string        `json:"message"`
+	// If an event slice is empty/nil, it's assumed that the event should be
+	// broadcast to all players
+	RecipientPlayerIDs []string `json:"recipient_player_ids"`
+}

@@ -2,7 +2,9 @@
 package bingo
 
 import (
+	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"github.com/google/uuid"
 )
@@ -22,13 +24,23 @@ const (
 )
 
 // Ball represents a single number from 1 to 75 (both inclusive) that can
-// called during a bingo game
+// called during a bingo game, as well as the free space (represented via the
+// zero value)
 type Ball byte
 
 // FreeSpace represents the space given for free to all players. It is the zero
 // value of Ball. It should not be daubed automatically on a bingo card, just so
 // that players have more to do in a round
 const FreeSpace = Ball(0)
+
+var _ json.Marshaler = FreeSpace
+
+// MarshalJSON turns a ball (which is already a byte) into a "human-readable"
+// byte. That is, the ball is converted to a string, and then to a byte slice.
+func (b Ball) MarshalJSON() ([]byte, error) {
+	text := strconv.Itoa(int(b))
+	return []byte(text), nil
+}
 
 // ParseBall takes any arbitrary int, and attempts to turn it into a bingo ball.
 // Will error if the provided value is below 1 or 75.
@@ -80,12 +92,17 @@ type GamePhase string
 
 const (
 	// GamePhaseInitialized represents when a new Game instance has just been
-	// created, but it hasn't been formally started yet. Once the game leaves
-	// this phase, it cannot ever return to this phase
-	GamePhaseInitialized GamePhase = "initialized"
+	// created, but it hasn't been connected to any other parts of the program,
+	// and is effectively inert. Once the game leaves this phase, it cannot ever
+	// return to this phase
+	GamePhaseInitialized           GamePhase = "initialized"
+	GamePhaseInitializationFailure GamePhase = "initialization_failure"
 	// GamePhaseRoundStart represents when a new round has just started. It can
 	// be considered an upkeep step for updating state that only updates at the
-	// start of each round
+	// start of each round. This is the only phase when players are able to join
+	// a game as participants. If a player joins in any other phase, they will
+	// be waitlisted and will have to wait until the game enters
+	// GamePhaseRoundStart again
 	GamePhaseRoundStart GamePhase = "round_start"
 	// GamePhaseCalling represents when a host is calling bingo balls for other
 	// players to daub on their cards. It should generally be the
@@ -101,10 +118,14 @@ const (
 	GamePhaseTiebreaker GamePhase = "tiebreaker"
 	// GamePhaseRoundEnd represents when a new round has just ended. It can
 	// be considered an upkeep step for updating state that only updates at the
-	// end of each round
+	// end of each round. It is assumed that this phase is entirely automatic,
+	// and will transition to GamePhaseRoundStart without any player or host
+	// intervention
 	GamePhaseRoundEnd GamePhase = "round_end"
 	// GamePhaseGameOver represents when the game has been terminated, either
-	// via manual termination, or by having the game end naturally.
+	// via manual termination, or by having the game end naturally. Once the
+	// game enters this phase, it cannot transition to any other phases. A new
+	// host will need to start a new game from scratch.
 	GamePhaseGameOver GamePhase = "game_over"
 )
 
@@ -112,6 +133,12 @@ const (
 type User struct {
 	ID   uuid.UUID `json:"id"`
 	Name string    `json:"name"`
+}
+
+// Player represents any user who is able to join a game as a card-player.
+type Player struct {
+	User  User
+	Cards []Card `json:"cards"`
 }
 
 // PlayerSuspension represents how long a player will be in time out for being
@@ -122,12 +149,25 @@ type PlayerSuspension struct {
 	CurrentRound int       `json:"current_round"`
 }
 
-// Game is a stateful representation of a bingo game.
-//
-// Todo: Flesh out the interface contract once I figure out what it should do.
-// I'm 99% sure I'll need one, if for no other reason than to keep the layers
-// of the application decoupled
-type Game interface {
-	Start() error
-	Terminate() error
+// GameManager is a stateful representation of a bingo game. It is able to
+// receive direct user input, and also let external users subscribe to changes
+// in the game state
+type GameManager interface {
+	// Command allows an entity (e.g., a system, a host, or a player) to input
+	// a specific command to update the game state. The game implementation
+	// should make sure that the command is valid for that entity to make, and
+	// should handle all possible race conditions from multiple entities calling
+	// Command at the same time.
+	//
+	// Command is intended as a low-level primitive for processing all the
+	// possible events that can happen in a game of bingo, and should have
+	// wrappers to provide more structured guarantees about how the program
+	// works.
+	Command(cmd GameCommand) error
+	// SubscribeToEntityEvents allows a consumer to subscribe to all events for
+	// a given entity.
+	SubscribeToEntityEvents(entityID uuid.UUID) (eventReceiver <-chan GameEvent, unsubscribe func(), err error)
+	// SubscribeToPhaseEvents allows an external system to subscribe to all
+	// events for a given phase type.
+	SubscribeToPhaseEvents(phase GamePhase) (eventReceiver <-chan GameEvent, unsubscribe func(), err error)
 }

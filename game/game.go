@@ -1,85 +1,117 @@
-// Package game defines the minimal implementation for a full bingo game
+// Package game defines the minimal implementation for a full, stateful,
+// multiplayer bingo game
 package game
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/Parkreiner/bingo"
 	"github.com/google/uuid"
 )
 
-// Game is a minimal implementation of the bingo.Game interface
-type Game struct {
-	id                uuid.UUID
-	currentRound      int
-	maxRounds         int
-	phase             bingo.GamePhase
-	ballRegistry      BallRegistry
-	cardRegistry      CardRegistry
-	host              bingo.User
-	activePlayers     []bingo.User
-	waitlistedPlayers []bingo.User
+const defaultMaxRounds = 8
 
-	// This value keeps track of which player was responsible for winning a
-	// given round. The whole player is stored because it's possible for a
-	// player to leave the game, so there's no guarantee that an ID in
+// Game is an implementation of the bingo.GameManager interface
+type Game struct {
+	cardRegistry CardRegistry
+	ballRegistry BallRegistry
+	host         bingo.User
+	// winningPlayers keeps track of which player(s) were responsible for
+	// winning a given round. The whole player is stored because it's possible
+	// for a player to leave the game, so there's no guarantee that an ID in
 	// winningPlayers would match with the players field. This field cannot be
 	// used to derive the round count, because it's possible for multiple
 	// players to win in a single round.
-	winningPlayers       []bingo.User
+	winningPlayers       []*bingo.Player
 	bingoCallerPlayerIDs []uuid.UUID
 	suspensions          []bingo.PlayerSuspension
 	bannedPlayerIDs      []uuid.UUID
-	terminationCallback  func()
+	activePlayers        []bingo.User
+	waitlistedPlayers    []bingo.User
+	id                   uuid.UUID
+	phase                bingo.GamePhase
+	creatorID            uuid.UUID
+	currentRound         int
+	maxRounds            int
+	dispose              func()
+	commandChan          chan bingo.GameCommand
 }
 
-var _ bingo.Game = &Game{}
+var _ bingo.GameManager = &Game{}
 
-func NewGame(host bingo.User, maxRounds int, rngSeed int64) *Game {
-	return &Game{
-		maxRounds:            maxRounds,
-		currentRound:         0,
-		host:                 host,
-		id:                   uuid.New(),
+type GameInit struct {
+	creatorID uuid.UUID
+	host      bingo.User
+	rngSeed   int64
+	maxRounds *int
+}
+
+// New creates a new instance of a Game
+func New(init GameInit) (*Game, error) {
+	game := &Game{
+		creatorID:    init.creatorID,
+		host:         init.host,
+		maxRounds:    defaultMaxRounds,
+		ballRegistry: *newBallRegistry(init.rngSeed),
+		cardRegistry: *newCardRegistry(init.rngSeed),
+
+		// Unbuffered to have synchronization guarantees
+		commandChan:          make(chan bingo.GameCommand),
 		phase:                bingo.GamePhaseInitialized,
-		ballRegistry:         *newBallRegistry(rngSeed),
-		cardRegistry:         *newCardRegistry(rngSeed),
+		id:                   uuid.New(),
+		currentRound:         0,
 		activePlayers:        nil,
 		waitlistedPlayers:    nil,
 		winningPlayers:       nil,
 		bingoCallerPlayerIDs: nil,
 		suspensions:          nil,
 		bannedPlayerIDs:      nil,
-		terminationCallback:  nil,
+		dispose:              nil,
 	}
+
+	if init.maxRounds != nil {
+		game.maxRounds = *init.maxRounds
+	}
+
+	terminateCardRegistry, err := game.cardRegistry.Start()
+	if err != nil {
+		return nil, fmt.Errorf("initializing game: %v", err)
+	}
+
+	disposed := false
+	game.dispose = func() {
+		if disposed {
+			return
+		}
+		close(game.commandChan)
+		terminateCardRegistry()
+		disposed = true
+	}
+
+	go func() {
+		for {
+			select {
+			case event := <-game.commandChan:
+				game.processQueuedCommand(event)
+			}
+		}
+	}()
+
+	return game, nil
 }
 
-func (g *Game) Start() error {
-	if g.phase != bingo.GamePhaseInitialized {
-		return errors.New("game has already been started")
-	}
-
-	cleanupCardRegistry, err := g.cardRegistry.Start()
-	if err != nil {
-		return fmt.Errorf("unable to start game: %v", err)
-	}
-
-	g.terminationCallback = func() {
-		cleanupCardRegistry()
-	}
+func (g *Game) processQueuedCommand(bingo.GameCommand) error {
 	return nil
 }
 
-func (g *Game) Terminate() error {
-	if g.phase == bingo.GamePhaseInitialized {
-		return errors.New("game must be started before it can be terminated")
-	}
-	if g.terminationCallback == nil {
-		return errors.New("unable to terminate game")
-	}
+func (g *Game) SubscribeToEntityEvents(uuid.UUID) (<-chan bingo.GameEvent, func(), error) {
+	return nil, func() {}, nil
+}
 
-	g.terminationCallback()
-	g.phase = bingo.GamePhaseGameOver
+func (g *Game) SubscribeToPhaseEvents(bingo.GamePhase) (<-chan bingo.GameEvent, func(), error) {
+	return nil, func() {}, nil
+}
+
+func (g *Game) Command(bingo.GameCommand) error {
 	return nil
 }
