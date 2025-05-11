@@ -89,3 +89,98 @@ func GenerateBingoBallsForRange(start int, end int) []Ball {
 	}
 	return cells
 }
+
+type BallRegistry interface {
+	NextAutomaticCall() (Ball, error)
+	SyncManualCall(ball Ball) error
+	Reset()
+}
+
+type CardRegistry interface {
+	Start() (terminate func(), err error)
+	CheckOutCard(playerID uuid.UUID) (*Card, error)
+	ReturnCard(cardID uuid.UUID) error
+}
+
+const maxPlayerCapacity = 50
+
+type GamePhase string
+
+const (
+	GamePhaseGameStart       GamePhase = "game_start"
+	GamePhaseRoundStart      GamePhase = "round_start"
+	GamePhaseCalling         GamePhase = "calling"
+	GamePhaseConfirmingBingo GamePhase = "confirming_bingo"
+	GamePhaseRoundEnd        GamePhase = "round_end"
+	GamePhaseRoundTransition GamePhase = "round_transition"
+	GamePhaseGameOver        GamePhase = "game_over"
+)
+
+type Player struct {
+	ID   uuid.UUID
+	Name string
+}
+
+type PlayerSuspension struct {
+	playerID     uuid.UUID
+	duration     int
+	currentRound int
+}
+
+type Game struct {
+	ID                uuid.UUID
+	maxRounds         int
+	Phase             GamePhase
+	ballRegistry      BallRegistry
+	cardRegistry      CardRegistry
+	host              Player
+	activePlayers     []Player
+	waitlistedPlayers []Player
+
+	// This value keeps track of which player was responsible for winning a
+	// given round. The whole player is stored because it's possible for a
+	// player to leave the game, so there's no guarantee that an ID in
+	// winningPlayers would match with the players field. This field is also
+	// used to derive the current round number
+	winningPlayers       []Player
+	bingoCallerPlayerIDs []uuid.UUID
+	suspensions          []PlayerSuspension
+	bannedPlayerIDs      []uuid.UUID
+}
+
+// JoinCode is a four-letter code for joining a game that a host has already
+// created
+type JoinCode string
+
+type EventType string
+
+const (
+	EventTypeGameUpdate EventType = "game_update"
+	EventTypeError      EventType = "error"
+)
+
+type Event struct {
+	ID        uuid.UUID
+	EventType EventType
+	Message   string
+	// If an event slice is empty, it's assumed that the event should be
+	// broadcast to all players
+	RecipientPlayerIDs []string
+}
+
+type Room struct {
+	id       uuid.UUID
+	joinCode JoinCode
+	game     *Game
+	events   []Event
+}
+
+type ClientRoomSnapshot struct {
+	id             uuid.UUID
+	joinCode       JoinCode
+	phase          GamePhase
+	winningPlayers []Player
+	suspension     *PlayerSuspension
+	cards          []Card
+	events         []Event
+}

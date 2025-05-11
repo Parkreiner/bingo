@@ -1,17 +1,16 @@
-package cardregistry
+package game
 
 import (
 	"github.com/Parkreiner/bingo"
-	"github.com/Parkreiner/bingo/shuffler"
 )
 
 type cellsGenerator struct {
-	shuffler *shuffler.Shuffler
+	shuffler *Shuffler
 }
 
 func newCellsGenerator(seed int64) *cellsGenerator {
 	return &cellsGenerator{
-		shuffler: shuffler.NewShuffler(seed),
+		shuffler: NewShuffler(seed),
 	}
 }
 

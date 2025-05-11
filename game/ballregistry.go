@@ -1,6 +1,4 @@
-// Package ballregistry manages the list of active bingo balls in one round of
-// bingo.
-package ballregistry
+package game
 
 import (
 	"errors"
@@ -8,25 +6,26 @@ import (
 	"sync"
 
 	"github.com/Parkreiner/bingo"
-	"github.com/Parkreiner/bingo/shuffler"
 )
 
-// Registry manages all bingo balls in a round of bingo. The Registry can be
+// BallRegistry manages all bingo balls in a round of bingo. The registry can be
 // reused across multiple rounds.
-type Registry struct {
+type BallRegistry struct {
 	called   []bingo.Ball
 	uncalled []bingo.Ball
-	shuffler *shuffler.Shuffler
+	shuffler *Shuffler
 	mtx      *sync.Mutex
 }
 
+var _ bingo.BallRegistry = &BallRegistry{}
+
 // NewRegistry creates a new instance of a bingo ball registry
-func NewRegistry(rngSeed int64) *Registry {
-	shuffler := shuffler.NewShuffler(rngSeed)
+func NewRegistry(rngSeed int64) *BallRegistry {
+	shuffler := NewShuffler(rngSeed)
 	uncalled := bingo.GenerateBingoBallsForRange(1, 75)
 	shuffler.ShuffleBingoBalls(uncalled)
 
-	return &Registry{
+	return &BallRegistry{
 		called:   nil,
 		uncalled: uncalled,
 		shuffler: shuffler,
@@ -36,7 +35,7 @@ func NewRegistry(rngSeed int64) *Registry {
 
 // NextAutomaticCall has the registry produce the next value for a game of
 // bingo. Helpful if you don't have any in-person bingo ball machines.
-func (a *Registry) NextAutomaticCall() (bingo.Ball, error) {
+func (a *BallRegistry) NextAutomaticCall() (bingo.Ball, error) {
 	a.mtx.Lock()
 	defer a.mtx.Unlock()
 
@@ -52,7 +51,7 @@ func (a *Registry) NextAutomaticCall() (bingo.Ball, error) {
 
 // SyncManualCall tells the registry which bingo ball was just called from an
 // in-person bingo machine.
-func (a *Registry) SyncManualCall(ball bingo.Ball) error {
+func (a *BallRegistry) SyncManualCall(ball bingo.Ball) error {
 	a.mtx.Lock()
 	defer a.mtx.Unlock()
 
@@ -80,7 +79,7 @@ func (a *Registry) SyncManualCall(ball bingo.Ball) error {
 
 // Reset reverts the state of the bingo ball registry to its initial state.
 // Should be called at the start of each round of bingo.
-func (a *Registry) Reset() {
+func (a *BallRegistry) Reset() {
 	a.mtx.Lock()
 	defer a.mtx.Unlock()
 
