@@ -17,12 +17,10 @@ type BallRegistry struct {
 	mtx      *sync.Mutex
 }
 
-var _ bingo.BallRegistry = &BallRegistry{}
-
-// NewRegistry creates a new instance of a bingo ball registry
-func NewRegistry(rngSeed int64) *BallRegistry {
+// newBallRegistry creates a new instance of a bingo ball registry
+func newBallRegistry(rngSeed int64) *BallRegistry {
 	shuffler := NewShuffler(rngSeed)
-	uncalled := bingo.GenerateBingoBallsForRange(1, 75)
+	uncalled := GenerateBingoBallsForRange(1, 75)
 	shuffler.ShuffleBingoBalls(uncalled)
 
 	return &BallRegistry{
@@ -83,7 +81,7 @@ func (a *BallRegistry) Reset() {
 	a.mtx.Lock()
 	defer a.mtx.Unlock()
 
-	newUncalled := bingo.GenerateBingoBallsForRange(1, 75)
+	newUncalled := GenerateBingoBallsForRange(1, 75)
 	a.shuffler.ShuffleBingoBalls(newUncalled)
 	a.called = nil
 	a.uncalled = newUncalled

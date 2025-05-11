@@ -18,11 +18,11 @@ func (cg *cellsGenerator) generateCells() [][]bingo.Ball {
 	// Generate all cells. There might be a way to do this that doesn't involve
 	// generating 10 extra cells per column, but the shuffling approach
 	// guarantees that we cannot ever have duplicate cells in the same column
-	allBCells := bingo.GenerateBingoBallsForRange(1, 15)
-	allICells := bingo.GenerateBingoBallsForRange(16, 30)
-	allNCells := bingo.GenerateBingoBallsForRange(31, 45)
-	allGCells := bingo.GenerateBingoBallsForRange(46, 60)
-	allOCells := bingo.GenerateBingoBallsForRange(61, 75)
+	allBCells := GenerateBingoBallsForRange(1, 15)
+	allICells := GenerateBingoBallsForRange(16, 30)
+	allNCells := GenerateBingoBallsForRange(31, 45)
+	allGCells := GenerateBingoBallsForRange(46, 60)
+	allOCells := GenerateBingoBallsForRange(61, 75)
 
 	cg.shuffler.ShuffleBingoBalls(allBCells)
 	cg.shuffler.ShuffleBingoBalls(allICells)
@@ -53,4 +53,22 @@ func (cg *cellsGenerator) generateCells() [][]bingo.Ball {
 	}
 
 	return aggregateCells
+}
+
+// GenerateBingoBallsForRange creates a range of bingo balls for a given
+// contiguous range. If the start or end bounds are invalid, the function will
+// return a nil slice instead.
+func GenerateBingoBallsForRange(start int, end int) []bingo.Ball {
+	var cells []bingo.Ball
+	inputIsInvalid := end <= start ||
+		start <= 0 || end <= 0 ||
+		start > bingo.MaxBallValue || end > bingo.MaxBallValue
+	if inputIsInvalid {
+		return cells
+	}
+
+	for i := start; i <= end; i++ {
+		cells = append(cells, bingo.Ball(i))
+	}
+	return cells
 }

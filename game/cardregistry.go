@@ -79,11 +79,9 @@ type CardRegistry struct {
 	surplusTicker     *time.Ticker
 }
 
-var _ bingo.CardRegistry = &CardRegistry{}
-
-// NewCardRegistry produces a new instance of a CardRegistry. It is not ready to
+// newCardRegistry produces a new instance of a CardRegistry. It is not ready to
 // use until you call the .Start method on it.
-func NewCardRegistry(rngSeed int64) *CardRegistry {
+func newCardRegistry(rngSeed int64) *CardRegistry {
 	return &CardRegistry{
 		status:            statusIdle,
 		registeredEntries: nil,

@@ -47,10 +47,10 @@ type Cell struct {
 	// The numeric value of a cell. It is assumed that once a full card has been
 	// created, Number will remain 100% static for as long as the card remains
 	// active in the game
-	Number Ball
+	Number Ball `json:"number"`
 	// Indicates whether a player has marked the cell with a virtual dauber.
 	// This value is allowed to be mutated.
-	Daubed bool
+	Daubed bool `json:"daubed"`
 }
 
 // Card represents a single stateful card, currently being used by a player.
@@ -66,121 +66,68 @@ type Card struct {
 	// 5. Column 5 is column O and can have numbers 61–75
 	//
 	// The free space is represented as 0.
-	Cells [][]*Cell
-
-	ID       uuid.UUID
-	PlayerID uuid.UUID
-}
-
-// GenerateBingoBallsForRange creates a range of bingo balls for a given
-// contiguous range. If the start or end bounds are invalid, the function will
-// return a nil slice instead.
-func GenerateBingoBallsForRange(start int, end int) []Ball {
-	var cells []Ball
-	inputIsInvalid := end <= start ||
-		start <= 0 || end <= 0 ||
-		start > MaxBallValue || end > MaxBallValue
-	if inputIsInvalid {
-		return cells
-	}
-
-	for i := start; i <= end; i++ {
-		cells = append(cells, Ball(i))
-	}
-	return cells
-}
-
-type BallRegistry interface {
-	NextAutomaticCall() (Ball, error)
-	SyncManualCall(ball Ball) error
-	Reset()
-}
-
-type CardRegistry interface {
-	Start() (terminate func(), err error)
-	CheckOutCard(playerID uuid.UUID) (*Card, error)
-	ReturnCard(cardID uuid.UUID) error
+	Cells    [][]*Cell `json:"cells"`
+	ID       uuid.UUID `json:"id"`
+	PlayerID uuid.UUID `json:"player_id"`
 }
 
 const maxPlayerCapacity = 50
 
+// GamePhase represents the current phase of a game. There can only be one phase
+// at a time, and all phase constants are listed in the order that they proceed
+// in while a game is ongoing.
 type GamePhase string
 
 const (
-	GamePhaseGameStart       GamePhase = "game_start"
-	GamePhaseRoundStart      GamePhase = "round_start"
-	GamePhaseCalling         GamePhase = "calling"
+	// GamePhaseInitialized represents when a new Game instance has just been
+	// created, but it hasn't been formally started yet. Once the game leaves
+	// this phase, it cannot ever return to this phase
+	GamePhaseInitialized GamePhase = "initialized"
+	// GamePhaseRoundStart represents when a new round has just started. It can
+	// be considered an upkeep step for updating state that only updates at the
+	// start of each round
+	GamePhaseRoundStart GamePhase = "round_start"
+	// GamePhaseCalling represents when a host is calling bingo balls for other
+	// players to daub on their cards. It should generally be the
+	// longest-running phase in the entire game
+	GamePhaseCalling GamePhase = "calling"
+	// GamePhaseConfirmingBingo represents when one or more players has called
+	// bingo, and the host is validating that the user(s) are correct
 	GamePhaseConfirmingBingo GamePhase = "confirming_bingo"
-	GamePhaseRoundEnd        GamePhase = "round_end"
-	GamePhaseRoundTransition GamePhase = "round_transition"
-	GamePhaseGameOver        GamePhase = "game_over"
+	// GamePhaseTiebreaker represents when more than one player has called
+	// bingo, and we need a way to settle who actually wins the prize. It is up
+	// to the host to decide whether only one or all the players wins the round,
+	// and the game can be settled without making any more bingo calls
+	GamePhaseTiebreaker GamePhase = "tiebreaker"
+	// GamePhaseRoundEnd represents when a new round has just ended. It can
+	// be considered an upkeep step for updating state that only updates at the
+	// end of each round
+	GamePhaseRoundEnd GamePhase = "round_end"
+	// GamePhaseGameOver represents when the game has been terminated, either
+	// via manual termination, or by having the game end naturally.
+	GamePhaseGameOver GamePhase = "game_over"
 )
 
-type Player struct {
-	ID   uuid.UUID
-	Name string
+// User represents a generic user. A user can either be a player or a host.
+type User struct {
+	ID   uuid.UUID `json:"id"`
+	Name string    `json:"name"`
 }
 
+// PlayerSuspension represents how long a player will be in time out for being
+// a pain in the butt to the other users in the room
 type PlayerSuspension struct {
-	playerID     uuid.UUID
-	duration     int
-	currentRound int
+	PlayerID     uuid.UUID `json:"player_id"`
+	Duration     int       `json:"duration"`
+	CurrentRound int       `json:"current_round"`
 }
 
-type Game struct {
-	ID                uuid.UUID
-	maxRounds         int
-	Phase             GamePhase
-	ballRegistry      BallRegistry
-	cardRegistry      CardRegistry
-	host              Player
-	activePlayers     []Player
-	waitlistedPlayers []Player
-
-	// This value keeps track of which player was responsible for winning a
-	// given round. The whole player is stored because it's possible for a
-	// player to leave the game, so there's no guarantee that an ID in
-	// winningPlayers would match with the players field. This field is also
-	// used to derive the current round number
-	winningPlayers       []Player
-	bingoCallerPlayerIDs []uuid.UUID
-	suspensions          []PlayerSuspension
-	bannedPlayerIDs      []uuid.UUID
-}
-
-// JoinCode is a four-letter code for joining a game that a host has already
-// created
-type JoinCode string
-
-type EventType string
-
-const (
-	EventTypeGameUpdate EventType = "game_update"
-	EventTypeError      EventType = "error"
-)
-
-type Event struct {
-	ID        uuid.UUID
-	EventType EventType
-	Message   string
-	// If an event slice is empty, it's assumed that the event should be
-	// broadcast to all players
-	RecipientPlayerIDs []string
-}
-
-type Room struct {
-	id       uuid.UUID
-	joinCode JoinCode
-	game     *Game
-	events   []Event
-}
-
-type ClientRoomSnapshot struct {
-	id             uuid.UUID
-	joinCode       JoinCode
-	phase          GamePhase
-	winningPlayers []Player
-	suspension     *PlayerSuspension
-	cards          []Card
-	events         []Event
+// Game is a stateful representation of a bingo game.
+//
+// Todo: Flesh out the interface contract once I figure out what it should do.
+// I'm 99% sure I'll need one, if for no other reason than to keep the layers
+// of the application decoupled
+type Game interface {
+	Start() error
+	Terminate() error
 }
