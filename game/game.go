@@ -3,7 +3,9 @@
 package game
 
 import (
+	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"sync"
 
@@ -155,10 +157,70 @@ func (g *Game) SubscribeToPhaseEvents(bingo.GamePhase) (<-chan bingo.GameEvent, 
 	return nil, func() {}, nil
 }
 
-// Todo: This feels like a handy convenience method to have, but it shouldn't
-// be formalized as an interface method for GameManager
 func (g *Game) SubscribeToAllPhaseEvents() (<-chan bingo.GameEvent, func(), error) {
-	return nil, func() {}, nil
+	g.mtx.Lock()
+	defer g.mtx.Unlock()
+
+	if g.phase == bingo.GamePhaseGameOver {
+		return nil, nil, errors.New("cannot subscribe to game that has been terminated")
+	}
+
+	var phaseEmitters []chan bingo.GameEvent
+	for _, gp := range bingo.AllGamePhases {
+		newEmitter := make(chan bingo.GameEvent)
+		phaseEmitters = append(phaseEmitters, newEmitter)
+		g.phaseSubscriptions[gp] = append(g.phaseSubscriptions[gp], newEmitter)
+	}
+
+	consolidatedEmitter := make(chan bingo.GameEvent)
+	go func() {
+		var selectCases []reflect.SelectCase
+		for _, pe := range phaseEmitters {
+			selectCases = append(selectCases, reflect.SelectCase{
+				Dir:  reflect.SelectRecv,
+				Chan: reflect.ValueOf(pe),
+			})
+		}
+
+		closeCount := 0
+		for {
+			_, value, closed := reflect.Select(selectCases)
+			if closed {
+				closeCount++
+				if closeCount == len(phaseEmitters)-1 {
+					break
+				}
+				continue
+			}
+
+			converted, ok := value.Interface().(bingo.GameEvent)
+			if !ok {
+				break
+			}
+			consolidatedEmitter <- converted
+		}
+	}()
+
+	cleanup := func() {
+		g.mtx.Lock()
+		defer g.mtx.Unlock()
+
+		for i, phase := range bingo.AllGamePhases {
+			emitterToDispose := phaseEmitters[i]
+			var filtered []chan bingo.GameEvent
+			for _, emitter := range g.phaseSubscriptions[phase] {
+				if emitter != emitterToDispose {
+					filtered = append(filtered, emitter)
+				}
+			}
+			g.phaseSubscriptions[phase] = filtered
+			close(emitterToDispose)
+		}
+
+		close(consolidatedEmitter)
+	}
+
+	return consolidatedEmitter, cleanup, nil
 }
 
 func (g *Game) Command(bingo.GameCommand) error {
