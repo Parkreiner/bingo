@@ -4,12 +4,17 @@ package game
 
 import (
 	"fmt"
+	"slices"
+	"sync"
 
 	"github.com/Parkreiner/bingo"
 	"github.com/google/uuid"
 )
 
-const defaultMaxRounds = 8
+const (
+	defaultMaxRounds  = 8
+	defaultMaxPlayers = 50
+)
 
 // Game is an implementation of the bingo.GameManager interface
 type Game struct {
@@ -26,24 +31,30 @@ type Game struct {
 	bingoCallerPlayerIDs []uuid.UUID
 	suspensions          []bingo.PlayerSuspension
 	bannedPlayerIDs      []uuid.UUID
-	activePlayers        []bingo.User
-	waitlistedPlayers    []bingo.User
+	activePlayers        []bingo.Player
+	waitlistedPlayers    []bingo.Player
 	id                   uuid.UUID
 	phase                bingo.GamePhase
 	creatorID            uuid.UUID
 	currentRound         int
 	maxRounds            int
+	maxPlayers           int
 	dispose              func()
 	commandChan          chan bingo.GameCommand
+	mtx                  sync.Mutex
+	// It is assumed that the map will be initialized with one entry per game
+	// phase when a new game is instantiated
+	phaseSubscriptions map[bingo.GamePhase][]chan bingo.GameEvent
 }
 
 var _ bingo.GameManager = &Game{}
 
 type GameInit struct {
-	creatorID uuid.UUID
-	host      bingo.User
-	rngSeed   int64
-	maxRounds *int
+	creatorID  uuid.UUID
+	host       bingo.User
+	rngSeed    int64
+	maxPlayers *int
+	maxRounds  *int
 }
 
 // New creates a new instance of a Game
@@ -52,11 +63,13 @@ func New(init GameInit) (*Game, error) {
 		creatorID:    init.creatorID,
 		host:         init.host,
 		maxRounds:    defaultMaxRounds,
+		maxPlayers:   defaultMaxPlayers,
 		ballRegistry: *newBallRegistry(init.rngSeed),
 		cardRegistry: *newCardRegistry(init.rngSeed),
 
 		// Unbuffered to have synchronization guarantees
 		commandChan:          make(chan bingo.GameCommand),
+		phaseSubscriptions:   make(map[bingo.GamePhase][]chan bingo.GameEvent),
 		phase:                bingo.GamePhaseInitialized,
 		id:                   uuid.New(),
 		currentRound:         0,
@@ -68,14 +81,22 @@ func New(init GameInit) (*Game, error) {
 		bannedPlayerIDs:      nil,
 		dispose:              nil,
 	}
-
 	if init.maxRounds != nil {
 		game.maxRounds = *init.maxRounds
 	}
+	if init.maxPlayers != nil {
+		game.maxPlayers = *init.maxPlayers
+	}
 
+	// Make sure to do things that can fail first, before we get too far into
+	// the initialization
 	terminateCardRegistry, err := game.cardRegistry.Start()
 	if err != nil {
 		return nil, fmt.Errorf("initializing game: %v", err)
+	}
+
+	for _, gp := range bingo.AllGamePhases {
+		game.phaseSubscriptions[gp] = nil
 	}
 
 	disposed := false
@@ -89,9 +110,13 @@ func New(init GameInit) (*Game, error) {
 	}
 
 	go func() {
+	loop:
 		for {
 			select {
-			case event := <-game.commandChan:
+			case event, closed := <-game.commandChan:
+				if closed {
+					break loop
+				}
 				game.processQueuedCommand(event)
 			}
 		}
@@ -104,11 +129,35 @@ func (g *Game) processQueuedCommand(bingo.GameCommand) error {
 	return nil
 }
 
-func (g *Game) SubscribeToEntityEvents(uuid.UUID) (<-chan bingo.GameEvent, func(), error) {
+func (g *Game) JoinGame(id uuid.UUID) (*bingo.Player, func(), error) {
+	g.mtx.Lock()
+	defer g.mtx.Unlock()
+
+	if id == g.host.ID {
+		return nil, nil, fmt.Errorf("player cannot join game that they are hosting")
+	}
+	if id == g.creatorID {
+		return nil, nil, fmt.Errorf("trying to add ID that belongs to system. Something is very wrong")
+	}
+
+	alreadyAdded := slices.ContainsFunc(g.activePlayers, func(p bingo.Player) bool {
+		return p.User.ID == id
+	})
+	if alreadyAdded {
+		// Todo: Figure out how to make sure that calling an unsubscribe
+		// callback multiple times won't break things
+	}
+
 	return nil, func() {}, nil
 }
 
 func (g *Game) SubscribeToPhaseEvents(bingo.GamePhase) (<-chan bingo.GameEvent, func(), error) {
+	return nil, func() {}, nil
+}
+
+// Todo: This feels like a handy convenience method to have, but it shouldn't
+// be formalized as an interface method for GameManager
+func (g *Game) SubscribeToAllPhaseEvents() (<-chan bingo.GameEvent, func(), error) {
 	return nil, func() {}, nil
 }
 

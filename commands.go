@@ -48,12 +48,11 @@ const (
 	// WITHOUT playing another round of bingo (i.e., making two players play
 	// rock paper scissors to decide the winner). If a host is feeling generous,
 	// they are allowed to award multiple players at once.
-	GameCommandHostAwardsPlayers GameCommandType = "host_awards_players"
+	GameCommandHostAwardsPlayers  GameCommandType = "host_awards_players"
+	GameCommandTransferHostStatus GameCommandType = "host_transfer_status"
 )
 
 const (
-	GameCommandPlayerJoinGame     GameCommandType = "player_join_game"
-	GameCommandPlayerLeaveGame    GameCommandType = "player_leave_game"
 	GameCommandPlayerDaub         GameCommandType = "player_daub"
 	GameCommandPlayerUndoDaub     GameCommandType = "player_undo_daub"
 	GameCommandPlayerCallBingo    GameCommandType = "player_call_bingo"
@@ -83,12 +82,8 @@ type GameCommandPayloadSystemBroadcastState struct {
 	RecipientIDs []uuid.UUID `json:"recipient_ids"`
 }
 
-type GameCommandPayloadUserJoinGame struct {
-	UserID uuid.UUID `json:"user_id"`
-}
-
-type GameCommandPayloadUserLeaveGame struct {
-	UserID uuid.UUID `json:"user_id"`
+type GameCommandPayloadTransferHostStatus struct {
+	NewHostID []uuid.UUID `json:"new_host_id"`
 }
 
 type GameCommandPayloadHostBanPlayer struct {

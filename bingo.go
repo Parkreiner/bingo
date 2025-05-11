@@ -129,16 +129,61 @@ const (
 	GamePhaseGameOver GamePhase = "game_over"
 )
 
+var AllGamePhases = []GamePhase{
+	GamePhaseInitialized,
+	GamePhaseInitializationFailure,
+	GamePhaseRoundStart,
+	GamePhaseCalling,
+	GamePhaseConfirmingBingo,
+	GamePhaseTiebreaker,
+	GamePhaseRoundEnd,
+	GamePhaseGameOver,
+}
+
 // User represents a generic user. A user can either be a player or a host.
 type User struct {
-	ID   uuid.UUID `json:"id"`
-	Name string    `json:"name"`
+	ID            uuid.UUID
+	Name          string
+	EventReceiver <-chan GameEvent
+}
+
+var _ json.Marshaler = &User{}
+
+func (u *User) MarshalJSON() ([]byte, error) {
+	type UserWithoutEmitter struct {
+		ID   uuid.UUID `json:"id"`
+		Name string    `json:"name"`
+	}
+	copied := UserWithoutEmitter{
+		ID:   u.ID,
+		Name: u.Name,
+	}
+	return json.Marshal(copied)
 }
 
 // Player represents any user who is able to join a game as a card-player.
 type Player struct {
 	User  User
-	Cards []Card `json:"cards"`
+	Cards []Card
+}
+
+var _ json.Marshaler = &Player{}
+
+func (p *Player) MarshalJSON() ([]byte, error) {
+	type PlayerWithoutEmitter struct {
+		ID    uuid.UUID `json:"id"`
+		Name  string    `json:"name"`
+		Cards []Card    `json:"cards"`
+	}
+	copied := PlayerWithoutEmitter{
+		ID:    p.User.ID,
+		Name:  p.User.Name,
+		Cards: p.Cards,
+	}
+	if copied.Cards == nil {
+		copied.Cards = []Card{}
+	}
+	return json.Marshal(copied)
 }
 
 // PlayerSuspension represents how long a player will be in time out for being
@@ -153,21 +198,23 @@ type PlayerSuspension struct {
 // receive direct user input, and also let external users subscribe to changes
 // in the game state
 type GameManager interface {
-	// Command allows an entity (e.g., a system, a host, or a player) to input
-	// a specific command to update the game state. The game implementation
-	// should make sure that the command is valid for that entity to make, and
-	// should handle all possible race conditions from multiple entities calling
+	// Command allows an entity (e.g., a system, a host, or a player) to make a
+	// command to update the game state. The GameManager implementation should
+	// make sure that the command is valid for that entity to make, and should
+	// handle all possible race conditions from multiple entities calling
 	// Command at the same time.
 	//
-	// Command is intended as a low-level primitive for processing all the
-	// possible events that can happen in a game of bingo, and should have
-	// wrappers to provide more structured guarantees about how the program
-	// works.
+	// Command is intended as a lower-level primitive for processing all the
+	// possible events that can happen in a game of bingo. It should not be
+	// connected directly to user input.
 	Command(cmd GameCommand) error
-	// SubscribeToEntityEvents allows a consumer to subscribe to all events for
-	// a given entity.
-	SubscribeToEntityEvents(entityID uuid.UUID) (eventReceiver <-chan GameEvent, unsubscribe func(), err error)
+	// JoinGame allows a user to join a game and become a player. The resulting
+	// player struct will have the same ID provided as input. Should error out
+	// if a host tries to join a game they're currently hosting
+	JoinGame(playerID uuid.UUID) (player *Player, leaveGame func(), err error)
 	// SubscribeToPhaseEvents allows an external system to subscribe to all
-	// events for a given phase type.
+	// events for a given phase type. An easy way to subscribe to all events is
+	// to iterate over the AllGamePhases slice, and call this method for each
+	// element
 	SubscribeToPhaseEvents(phase GamePhase) (eventReceiver <-chan GameEvent, unsubscribe func(), err error)
 }
