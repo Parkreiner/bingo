@@ -6,12 +6,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// CommandBall is a necessary evil for dealing with marhsalling ball values
-// (which are already represented as bytes) as JSON. There's no great way to
-// attach the json.Unmarshaller interface to a non-struct value. A user will
-// need to call ParseBall function on it before using
-type CommandBall int
-
 // GameCommandType indicates what type of command is trying to be input into a
 // ame. It can be used to know how what should be done in response to the
 // incoming input, as well as know how the payload for the command is
@@ -28,8 +22,7 @@ const (
 	// itself and tear down all resources. Once a game has been disposed, it is
 	// assumed that it will not ever be updated, and it will automatically
 	// handle all cleanup logic
-	GameCommandSystemDispose       GameCommandType = "system_dispose"
-	GameCommandCheckHostConnection GameCommandType = "system_check_host_connection"
+	GameCommandSystemDispose GameCommandType = "system_dispose"
 )
 
 const (
@@ -39,8 +32,8 @@ const (
 	GameCommandHostSuspendPlayer        GameCommandType = "host_suspend_player"
 	GameCommandHostRequestBall          GameCommandType = "host_request_ball"
 	GameCommandHostSyncBall             GameCommandType = "host_sync_ball"
-	GameCommandHostStartTiebreakerRound GameCommandType = "host_start_tiebreaker_round"
 	GameCommandHostAcknowledgeBingoCall GameCommandType = "host_acknowledge_bingo_call"
+	GameCommandHostStartTiebreakerRound GameCommandType = "host_start_tiebreaker_round"
 	// GameCommandHostAwardsPlayers indicates that the host acknowledges a
 	// successful bingo call from one or more players. It is allowed to be
 	// called at any time during the Confirming or Tiebreaker phases. For the
@@ -48,9 +41,7 @@ const (
 	// WITHOUT playing another round of bingo (i.e., making two players play
 	// rock paper scissors to decide the winner). If a host is feeling generous,
 	// they are allowed to award multiple players at once.
-	GameCommandHostAwardsPlayers  GameCommandType = "host_awards_players"
-	GameCommandTransferHostStatus GameCommandType = "host_transfer_status"
-	GameCommandHostChangeName     GameCommandType = "host_change_name"
+	GameCommandHostAwardsPlayers GameCommandType = "host_awards_players"
 )
 
 const (
@@ -58,7 +49,6 @@ const (
 	GameCommandPlayerUndoDaub     GameCommandType = "player_undo_daub"
 	GameCommandPlayerCallBingo    GameCommandType = "player_call_bingo"
 	GameCommandPlayerReplaceCards GameCommandType = "player_replace_cards"
-	GameCommandPlayerChangeName   GameCommandType = "host_player_name"
 )
 
 // GameCommand is any instruction that can be dispatched directly and
@@ -103,15 +93,15 @@ type GameCommandPayloadHostAwardsPlayers struct {
 }
 
 type GameCommandPayloadHostSyncBall struct {
-	Value CommandBall `json:"value"`
+	Value int `json:"value"`
 }
 
 type GameCommandPayloadPlayerDaub struct {
-	CardID uuid.UUID   `json:"card_id"`
-	Value  CommandBall `json:"value"`
+	CardID uuid.UUID `json:"card_id"`
+	Value  int       `json:"value"`
 }
 
 type GameCommandPayloadPlayerUndoDaub struct {
-	CardID uuid.UUID   `json:"card_id"`
-	Value  CommandBall `json:"value"`
+	CardID uuid.UUID `json:"card_id"`
+	Value  int       `json:"value"`
 }

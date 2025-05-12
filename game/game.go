@@ -12,6 +12,8 @@ import (
 	"github.com/google/uuid"
 )
 
+var errTodo = errors.New("not implemented yet")
+
 const (
 	defaultMaxRounds  = 8
 	defaultMaxPlayers = 50
@@ -36,6 +38,8 @@ type commandSession struct {
 }
 
 // Game is an implementation of the bingo.GameManager interface
+// Todo: Figure out how to split this struct up so that there's less contention
+// for the mutex locks. That, or figure out a way to do EVERYTHING with channels
 type Game struct {
 	cardRegistry cardRegistry
 	ballRegistry ballRegistry
@@ -143,7 +147,7 @@ func New(init Init) (*Game, error) {
 
 	go func() {
 		for session := range game.commandChan {
-			err := game.processQueuedCommand(session.command)
+			err := game.routeCommand(session.command)
 			session.errorChan <- err
 		}
 	}()
@@ -151,8 +155,27 @@ func New(init Init) (*Game, error) {
 	return game, nil
 }
 
-func (g *Game) processQueuedCommand(bingo.GameCommand) error {
-	return nil
+func (g *Game) routeCommand(command bingo.GameCommand) error {
+	switch command.Type {
+	// System commands
+	case bingo.GameCommandSystemDispose:
+		return g.processSystemDispose(command.CommanderEntityID)
+	case bingo.GameCommandSystemBroadcastState:
+		return g.processSystemBroadcastState(command.CommanderEntityID)
+
+	// Host commands
+	case bingo.GameCommandHostStartGame:
+		return g.processHostStartGame(command.CommanderEntityID)
+
+	// Player commands
+	case bingo.GameCommandPlayerDaub:
+		return g.processPlayerDaub(command)
+	case bingo.GameCommandPlayerUndoDaub:
+		return g.processPlayerUndoDaub(command)
+
+	default:
+		return fmt.Errorf("command %q has type of unknown format", command.Type)
+	}
 }
 
 // JoinGame allows a player to join a game as a normal player. Trying to
@@ -370,9 +393,5 @@ func (g *Game) Command(command bingo.GameCommand) error {
 	}
 
 	err := <-channel
-	if err == nil {
-		return nil
-	}
-
-	return nil
+	return err
 }

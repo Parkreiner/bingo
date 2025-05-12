@@ -4,7 +4,6 @@ package bingo
 import (
 	"encoding/json"
 	"fmt"
-	"strconv"
 
 	"github.com/google/uuid"
 )
@@ -36,10 +35,9 @@ const FreeSpace = Ball(0)
 var _ json.Marshaler = FreeSpace
 
 // MarshalJSON turns a ball (which is already a byte) into a "human-readable"
-// byte. That is, the ball is converted to a string, and then to a byte slice.
+// int, and then into a byte slice.
 func (b Ball) MarshalJSON() ([]byte, error) {
-	text := strconv.Itoa(int(b))
-	return []byte(text), nil
+	return json.Marshal(int(b))
 }
 
 // ParseBall takes any arbitrary int, and attempts to turn it into a bingo ball.
