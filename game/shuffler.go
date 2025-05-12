@@ -19,9 +19,9 @@ func newShuffler(rngSeed int64) *shuffler {
 	}
 }
 
-// shuffleBingoBalls shuffles a slice of bingo balls in place using
-// pseudo-random logic.
-func (s *shuffler) shuffleBingoBalls(balls []bingo.Ball) {
+// shuffleBalls shuffles a slice of bingo balls in place using pseudo-random
+// logic.
+func (s *shuffler) shuffleBalls(balls []bingo.Ball) {
 	for i := len(balls) - 1; i >= 1; i-- {
 		randomIndex := s.rng.Intn(i + 1)
 		elementToSwap := balls[i]

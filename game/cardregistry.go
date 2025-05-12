@@ -48,19 +48,19 @@ type registryBingoCard struct {
 	checkedOut bool
 }
 
-// status represents the status of a CardRegistry
-type status string
+// cardGenStatus represents the cardGenStatus of a CardRegistry
+type cardGenStatus string
 
 const (
 	// statusIdle indicates that the CardRegistry is ready to start
-	statusIdle status = "idle"
+	statusIdle cardGenStatus = "idle"
 	// statusRunning indicates that the CardRegistry has started and is
 	// ready to use
-	statusRunning status = "running"
+	statusRunning cardGenStatus = "running"
 	// statusTerminated indicates that the CardRegistry has been killed, and
 	// cannot be used any longer. A user will need to make a new CardRegistry
 	// instance
-	statusTerminated status = "terminated"
+	statusTerminated cardGenStatus = "terminated"
 )
 
 // cardRegistry defines an instance of a centralized bingo card registry. It
@@ -69,7 +69,7 @@ const (
 // generate any additional cards, and a new registry will need to be created
 // from scratch
 type cardRegistry struct {
-	status            status
+	status            cardGenStatus
 	statusMtx         *sync.RWMutex
 	registeredEntries []*registryBingoCard
 	entriesMtx        *sync.Mutex
@@ -94,7 +94,7 @@ func newCardRegistry(rngSeed int64) *cardRegistry {
 	}
 }
 
-func (cr *cardRegistry) getStatus() status {
+func (cr *cardRegistry) getStatus() cardGenStatus {
 	cr.statusMtx.RLock()
 	defer cr.statusMtx.Unlock()
 	return cr.status

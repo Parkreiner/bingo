@@ -21,7 +21,7 @@ type ballRegistry struct {
 func newBallRegistry(rngSeed int64) *ballRegistry {
 	shuffler := newShuffler(rngSeed)
 	uncalled := generateBingoBallsForRange(1, 75)
-	shuffler.shuffleBingoBalls(uncalled)
+	shuffler.shuffleBalls(uncalled)
 
 	return &ballRegistry{
 		called:   nil,
@@ -82,7 +82,7 @@ func (a *ballRegistry) Reset() {
 	defer a.mtx.Unlock()
 
 	newUncalled := generateBingoBallsForRange(1, 75)
-	a.shuffler.shuffleBingoBalls(newUncalled)
-	a.called = nil
+	a.shuffler.shuffleBalls(newUncalled)
 	a.uncalled = newUncalled
+	a.called = nil
 }

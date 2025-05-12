@@ -24,11 +24,11 @@ func (cg *cellsGenerator) generateCells() [][]bingo.Ball {
 	allGCells := generateBingoBallsForRange(46, 60)
 	allOCells := generateBingoBallsForRange(61, 75)
 
-	cg.shuffler.shuffleBingoBalls(allBCells)
-	cg.shuffler.shuffleBingoBalls(allICells)
-	cg.shuffler.shuffleBingoBalls(allNCells)
-	cg.shuffler.shuffleBingoBalls(allGCells)
-	cg.shuffler.shuffleBingoBalls(allOCells)
+	cg.shuffler.shuffleBalls(allBCells)
+	cg.shuffler.shuffleBalls(allICells)
+	cg.shuffler.shuffleBalls(allNCells)
+	cg.shuffler.shuffleBalls(allGCells)
+	cg.shuffler.shuffleBalls(allOCells)
 
 	aggregateCells := [][]bingo.Ball{
 		allBCells[0:5],
