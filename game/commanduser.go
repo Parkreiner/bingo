@@ -7,6 +7,14 @@ import (
 	"github.com/Parkreiner/bingo"
 )
 
+func (g *Game) processPlayerDaub(command bingo.GameCommand) error {
+	return setDaubValue(g, command, true)
+}
+
+func (g *Game) processPlayerUndoDaub(command bingo.GameCommand) error {
+	return setDaubValue(g, command, false)
+}
+
 func setDaubValue(game *Game, command bingo.GameCommand, daubValue bool) error {
 	game.mtx.Lock()
 	defer game.mtx.Unlock()
@@ -64,12 +72,4 @@ func setDaubValue(game *Game, command bingo.GameCommand, daubValue bool) error {
 	cell.Daubed = daubValue
 
 	return nil
-}
-
-func (g *Game) processPlayerDaub(command bingo.GameCommand) error {
-	return setDaubValue(g, command, true)
-}
-
-func (g *Game) processPlayerUndoDaub(command bingo.GameCommand) error {
-	return setDaubValue(g, command, false)
 }

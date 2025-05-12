@@ -11,15 +11,16 @@ import (
 type GameEventType string
 
 const (
-	EventTypeGameUpdate GameEventType = "game_update"
-	EventTypeError      GameEventType = "error"
+	EventTypeUpdate GameEventType = "update"
+	EventTypeError  GameEventType = "error"
 )
 
 type GameEvent struct {
-	ID                uuid.UUID     `json:"id"`
-	EventType         GameEventType `json:"event_type"`
-	CreationTimestamp time.Time     `json:"creation_timestamp"`
-	Message           string        `json:"message"`
+	ID      uuid.UUID     `json:"id"`
+	Phase   GamePhase     `json:"phase"`
+	Type    GameEventType `json:"event_type"`
+	Created time.Time     `json:"creation_timestamp"`
+	Message string        `json:"message"`
 	// If an event slice is empty/nil, it's assumed that the event should be
 	// broadcast to all players
 	RecipientPlayerIDs []string `json:"recipient_player_ids"`
