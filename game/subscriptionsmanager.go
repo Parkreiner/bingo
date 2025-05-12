@@ -4,15 +4,20 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
+	"time"
 
 	"github.com/Parkreiner/bingo"
 )
+
+const maxSubscriberGoroutines = 100
 
 type subscriptionsManager struct {
 	// It is assumed that the map will be initialized with one entry per game
 	// phase when a new game is instantiated
 	subs map[bingo.GamePhase][]chan bingo.GameEvent
-	mtx  *sync.Mutex
+	// Should always be buffered with some size
+	routineBuffer chan struct{}
+	mtx           *sync.Mutex
 }
 
 func newSubscriptionsManager() subscriptionsManager {
@@ -21,14 +26,56 @@ func newSubscriptionsManager() subscriptionsManager {
 		subs[gp] = nil
 	}
 
+	buffer := make(chan struct{}, maxSubscriberGoroutines)
+	for i := 0; i < maxSubscriberGoroutines; i++ {
+		buffer <- struct{}{}
+	}
+
 	return subscriptionsManager{
-		subs: subs,
-		mtx:  &sync.Mutex{},
+		subs:          subs,
+		routineBuffer: buffer,
+		mtx:           &sync.Mutex{},
 	}
 }
 
-func (sm *subscriptionsManager) dispatchEvent(bingo.GameEvent) error {
-	return errTodo
+func (sm *subscriptionsManager) dispatchEvent(event bingo.GameEvent) error {
+	sm.mtx.Lock()
+	subs, ok := sm.subs[event.Phase]
+	if !ok {
+		return fmt.Errorf("received event with unknown phase %q", event.Phase)
+	}
+
+	maxBroadcasts := len(subs)
+	successfulBroadcasts := 0
+	var subsCopy []chan bingo.GameEvent
+	for _, s := range subs {
+		subsCopy = append(subsCopy, s)
+	}
+	sm.mtx.Unlock()
+
+	wg := sync.WaitGroup{}
+	for _, s := range subsCopy {
+		wg.Add(1)
+		<-sm.routineBuffer
+		go func() {
+			defer func() {
+				wg.Done()
+				sm.routineBuffer <- struct{}{}
+			}()
+
+			select {
+			case s <- event:
+				successfulBroadcasts++
+			case <-time.After(2 * time.Second):
+			}
+		}()
+	}
+	wg.Wait()
+
+	if successfulBroadcasts != maxBroadcasts {
+		return fmt.Errorf("dispatch failed for %d/%d subscribers", successfulBroadcasts, maxBroadcasts)
+	}
+	return nil
 }
 
 // subscribeToPhaseEvents lets an external system subscribe to all events
