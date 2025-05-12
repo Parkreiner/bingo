@@ -137,15 +137,8 @@ func New(init Init) (*Game, error) {
 	}
 
 	go func() {
-	loop:
-		for {
-			select {
-			case event, closed := <-game.commandChan:
-				if closed {
-					break loop
-				}
-				game.processQueuedCommand(event)
-			}
+		for event := range game.commandChan {
+			game.processQueuedCommand(event)
 		}
 	}()
 
