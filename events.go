@@ -7,6 +7,7 @@ import (
 )
 
 // GameEventType indicates the type and context of a new event's message
+// Todo: Definitely need to revamp this type with better granularity
 type GameEventType string
 
 const (

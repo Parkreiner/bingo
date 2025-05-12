@@ -140,48 +140,41 @@ var AllGamePhases = []GamePhase{
 	GamePhaseGameOver,
 }
 
-// User represents a generic user. A user can either be a player or a host.
-type User struct {
-	ID            uuid.UUID
-	Name          string
-	EventReceiver <-chan GameEvent
-}
+type PlayerStatus string
 
-var _ json.Marshaler = &User{}
-
-func (u *User) MarshalJSON() ([]byte, error) {
-	type UserWithoutEmitter struct {
-		ID   uuid.UUID `json:"id"`
-		Name string    `json:"name"`
-	}
-	copied := UserWithoutEmitter{
-		ID:   u.ID,
-		Name: u.Name,
-	}
-	return json.Marshal(copied)
-}
+const (
+	PlayerStatusHost       PlayerStatus = "host"
+	PlayerStatusActive     PlayerStatus = "active"
+	PlayerStatusWaitlisted PlayerStatus = "waitlisted"
+	PlayerStatusSuspended  PlayerStatus = "suspended"
+	PlayerStatusBanned     PlayerStatus = "banned"
+)
 
 // Player represents any user who is able to join a game as a card-player.
 type Player struct {
-	User  User
-	Cards []Card
+	Status        PlayerStatus
+	ID            uuid.UUID
+	Name          string
+	Cards         []*Card
+	EventReceiver <-chan GameEvent
 }
 
 var _ json.Marshaler = &Player{}
 
 func (p *Player) MarshalJSON() ([]byte, error) {
-	type PlayerWithoutEmitter struct {
-		ID    uuid.UUID `json:"id"`
-		Name  string    `json:"name"`
-		Cards []Card    `json:"cards"`
+	type PlayerWithoutReceiver struct {
+		ID     uuid.UUID    `json:"id"`
+		Name   string       `json:"name"`
+		Cards  []*Card      `json:"cards"`
+		Status PlayerStatus `json:"status"`
 	}
-	copied := PlayerWithoutEmitter{
-		ID:    p.User.ID,
-		Name:  p.User.Name,
+	copied := PlayerWithoutReceiver{
+		ID:    p.ID,
+		Name:  p.Name,
 		Cards: p.Cards,
 	}
 	if copied.Cards == nil {
-		copied.Cards = []Card{}
+		copied.Cards = []*Card{}
 	}
 	return json.Marshal(copied)
 }
@@ -211,7 +204,7 @@ type GameManager interface {
 	// JoinGame allows a user to join a game and become a player. The resulting
 	// player struct will have the same ID provided as input. Should error out
 	// if a host tries to join a game they're currently hosting
-	JoinGame(playerID uuid.UUID) (player *Player, leaveGame func(), err error)
+	JoinGame(playerID uuid.UUID, playerName string) (player *Player, leaveGame func(), err error)
 	// SubscribeToPhaseEvents allows an external system to subscribe to all
 	// events for a given phase type. An easy way to subscribe to all events is
 	// to iterate over the AllGamePhases slice, and call this method for each

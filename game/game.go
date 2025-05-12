@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"slices"
 	"sync"
 
 	"github.com/Parkreiner/bingo"
@@ -18,11 +17,24 @@ const (
 	defaultMaxPlayers = 50
 )
 
+// playerEntry contains information about a player that is currently part of the
+// game, as well as any state necessary for that player to perform actions
+// (including leaving the game)
+type playerEntry struct {
+	// eventChan should always be the same event channel attached to the
+	// player field. The main difference is that this version allows two-way
+	// channel communication, while the player version enforces receive-only
+	// communication at the type level
+	eventChan chan bingo.GameEvent
+	leaveGame func()
+	player    *bingo.Player
+}
+
 // Game is an implementation of the bingo.GameManager interface
 type Game struct {
-	cardRegistry CardRegistry
-	ballRegistry BallRegistry
-	host         bingo.User
+	cardRegistry cardRegistry
+	ballRegistry ballRegistry
+	host         *bingo.Player
 	// winningPlayers keeps track of which player(s) were responsible for
 	// winning a given round. The whole player is stored because it's possible
 	// for a player to leave the game, so there's no guarantee that an ID in
@@ -31,13 +43,12 @@ type Game struct {
 	// players to win in a single round.
 	winningPlayers       []*bingo.Player
 	bingoCallerPlayerIDs []uuid.UUID
-	suspensions          []bingo.PlayerSuspension
+	suspensions          []*bingo.PlayerSuspension
 	bannedPlayerIDs      []uuid.UUID
-	activePlayers        []bingo.Player
-	waitlistedPlayers    []bingo.Player
+	cardPlayers          []*playerEntry
 	id                   uuid.UUID
 	phase                bingo.GamePhase
-	creatorID            uuid.UUID
+	systemID             uuid.UUID
 	currentRound         int
 	maxRounds            int
 	maxPlayers           int
@@ -51,19 +62,29 @@ type Game struct {
 
 var _ bingo.GameManager = &Game{}
 
-type GameInit struct {
-	creatorID  uuid.UUID
-	host       bingo.User
+// Init is used to instantiate a Game instance via the New function
+type Init struct {
+	systemID   uuid.UUID
+	hostID     uuid.UUID
+	hostName   string
 	rngSeed    int64
 	maxPlayers *int
 	maxRounds  *int
 }
 
 // New creates a new instance of a Game
-func New(init GameInit) (*Game, error) {
+func New(init Init) (*Game, error) {
+	host := &bingo.Player{
+		Status:        bingo.PlayerStatusHost,
+		ID:            init.hostID,
+		Name:          init.hostName,
+		Cards:         nil,
+		EventReceiver: nil,
+	}
+
 	game := &Game{
-		creatorID:    init.creatorID,
-		host:         init.host,
+		systemID:     init.systemID,
+		host:         host,
 		maxRounds:    defaultMaxRounds,
 		maxPlayers:   defaultMaxPlayers,
 		ballRegistry: *newBallRegistry(init.rngSeed),
@@ -75,8 +96,7 @@ func New(init GameInit) (*Game, error) {
 		phase:                bingo.GamePhaseInitialized,
 		id:                   uuid.New(),
 		currentRound:         0,
-		activePlayers:        nil,
-		waitlistedPlayers:    nil,
+		cardPlayers:          nil,
 		winningPlayers:       nil,
 		bingoCallerPlayerIDs: nil,
 		suspensions:          nil,
@@ -131,33 +151,94 @@ func (g *Game) processQueuedCommand(bingo.GameCommand) error {
 	return nil
 }
 
-func (g *Game) JoinGame(id uuid.UUID) (*bingo.Player, func(), error) {
+// JoinGame allows a player to join a game as a normal player. Trying to
+func (g *Game) JoinGame(playerID uuid.UUID, playerName string) (*bingo.Player, func(), error) {
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
 
-	if id == g.host.ID {
+	if g.phase == bingo.GamePhaseGameOver {
+		return nil, nil, fmt.Errorf("cannot join game that has been terminated")
+	}
+	if playerID == g.host.ID {
 		return nil, nil, fmt.Errorf("player cannot join game that they are hosting")
 	}
-	if id == g.creatorID {
+	if playerID == g.systemID {
 		return nil, nil, fmt.Errorf("trying to add ID that belongs to system. Something is very wrong")
 	}
 
-	alreadyAdded := slices.ContainsFunc(g.activePlayers, func(p bingo.Player) bool {
-		return p.User.ID == id
-	})
-	if alreadyAdded {
-		// Todo: Figure out how to make sure that calling an unsubscribe
-		// callback multiple times won't break things
+	// Only make a new entry if it doesn't exist in the game at all
+	var entry *playerEntry
+	for _, p := range g.cardPlayers {
+		if p.player.ID == playerID {
+			entry = p
+			break
+		}
+	}
+	if entry != nil {
+		return entry.player, entry.leaveGame, nil
 	}
 
-	return nil, func() {}, nil
+	var cards []*bingo.Card
+	for i := 0; i < bingo.MaxCards; i++ {
+		card, err := g.cardRegistry.CheckOutCard(playerID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("unable to produce card %d for %q (%s): %v", i+1, playerID, playerName, err)
+		}
+		cards = append(cards, card)
+	}
+
+	// Very important that the same eventChan be embedded in both the entry and
+	// the player inside the entry
+	eventChan := make(chan bingo.GameEvent)
+	status := bingo.PlayerStatusWaitlisted
+	if g.phase == bingo.GamePhaseRoundStart {
+		status = bingo.PlayerStatusActive
+	}
+	entry = &playerEntry{
+		eventChan: eventChan,
+		player: &bingo.Player{
+			Status:        status,
+			ID:            playerID,
+			Name:          playerName,
+			Cards:         cards,
+			EventReceiver: eventChan,
+		},
+		leaveGame: func() {
+			g.mtx.Lock()
+			defer g.mtx.Unlock()
+
+			var filtered []*playerEntry
+			for _, p := range g.cardPlayers {
+				if p.player.ID != playerID {
+					filtered = append(filtered, p)
+				}
+			}
+			if len(filtered) == len(g.cardPlayers) {
+				return
+			}
+
+			g.cardPlayers = filtered
+			close(entry.eventChan)
+		},
+	}
+	g.cardPlayers = append(g.cardPlayers, entry)
+
+	return entry.player, entry.leaveGame, nil
 }
 
+// SubscribeToPhaseEvents lets an external system subscribe to all events
+// emitted during a given phase. There is no filtering beyond that – if the game
+// is in the phase that was subscribed to, ALL events for all users will be
+// emitted
 func (g *Game) SubscribeToPhaseEvents(bingo.GamePhase) (<-chan bingo.GameEvent, func(), error) {
 	return nil, func() {}, nil
 }
 
-func (g *Game) SubscribeToAllPhaseEvents() (<-chan bingo.GameEvent, func(), error) {
+// SubscribeToAllEvents is a convenience method for subscribing to all
+// possible phase events. It is fully equivalent to calling the
+// SubscribeToPhaseEvents method once for each phase type, and then stiching
+// the resulting return types together manually.
+func (g *Game) SubscribeToAllEvents() (<-chan bingo.GameEvent, func(), error) {
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
 
@@ -223,6 +304,7 @@ func (g *Game) SubscribeToAllPhaseEvents() (<-chan bingo.GameEvent, func(), erro
 	return consolidatedEmitter, cleanup, nil
 }
 
+// Command allows the Game to receive direct input from outside sources
 func (g *Game) Command(bingo.GameCommand) error {
 	return nil
 }

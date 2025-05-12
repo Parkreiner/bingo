@@ -5,12 +5,12 @@ import (
 )
 
 type cellsGenerator struct {
-	shuffler *Shuffler
+	shuffler *shuffler
 }
 
 func newCellsGenerator(seed int64) *cellsGenerator {
 	return &cellsGenerator{
-		shuffler: NewShuffler(seed),
+		shuffler: newShuffler(seed),
 	}
 }
 
@@ -18,17 +18,17 @@ func (cg *cellsGenerator) generateCells() [][]bingo.Ball {
 	// Generate all cells. There might be a way to do this that doesn't involve
 	// generating 10 extra cells per column, but the shuffling approach
 	// guarantees that we cannot ever have duplicate cells in the same column
-	allBCells := GenerateBingoBallsForRange(1, 15)
-	allICells := GenerateBingoBallsForRange(16, 30)
-	allNCells := GenerateBingoBallsForRange(31, 45)
-	allGCells := GenerateBingoBallsForRange(46, 60)
-	allOCells := GenerateBingoBallsForRange(61, 75)
+	allBCells := generateBingoBallsForRange(1, 15)
+	allICells := generateBingoBallsForRange(16, 30)
+	allNCells := generateBingoBallsForRange(31, 45)
+	allGCells := generateBingoBallsForRange(46, 60)
+	allOCells := generateBingoBallsForRange(61, 75)
 
-	cg.shuffler.ShuffleBingoBalls(allBCells)
-	cg.shuffler.ShuffleBingoBalls(allICells)
-	cg.shuffler.ShuffleBingoBalls(allNCells)
-	cg.shuffler.ShuffleBingoBalls(allGCells)
-	cg.shuffler.ShuffleBingoBalls(allOCells)
+	cg.shuffler.shuffleBingoBalls(allBCells)
+	cg.shuffler.shuffleBingoBalls(allICells)
+	cg.shuffler.shuffleBingoBalls(allNCells)
+	cg.shuffler.shuffleBingoBalls(allGCells)
+	cg.shuffler.shuffleBingoBalls(allOCells)
 
 	aggregateCells := [][]bingo.Ball{
 		allBCells[0:5],
@@ -55,10 +55,10 @@ func (cg *cellsGenerator) generateCells() [][]bingo.Ball {
 	return aggregateCells
 }
 
-// GenerateBingoBallsForRange creates a range of bingo balls for a given
+// generateBingoBallsForRange creates a range of bingo balls for a given
 // contiguous range. If the start or end bounds are invalid, the function will
 // return a nil slice instead.
-func GenerateBingoBallsForRange(start int, end int) []bingo.Ball {
+func generateBingoBallsForRange(start int, end int) []bingo.Ball {
 	var cells []bingo.Ball
 	inputIsInvalid := end <= start ||
 		start <= 0 || end <= 0 ||

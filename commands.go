@@ -50,6 +50,7 @@ const (
 	// they are allowed to award multiple players at once.
 	GameCommandHostAwardsPlayers  GameCommandType = "host_awards_players"
 	GameCommandTransferHostStatus GameCommandType = "host_transfer_status"
+	GameCommandHostChangeName     GameCommandType = "host_change_name"
 )
 
 const (
@@ -57,6 +58,7 @@ const (
 	GameCommandPlayerUndoDaub     GameCommandType = "player_undo_daub"
 	GameCommandPlayerCallBingo    GameCommandType = "player_call_bingo"
 	GameCommandPlayerReplaceCards GameCommandType = "player_replace_cards"
+	GameCommandPlayerChangeName   GameCommandType = "host_player_name"
 )
 
 // GameCommand is any instruction that can be dispatched directly and

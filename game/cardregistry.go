@@ -63,12 +63,12 @@ const (
 	statusTerminated status = "terminated"
 )
 
-// CardRegistry defines an instance of a centralized bingo card registry. It
+// cardRegistry defines an instance of a centralized bingo card registry. It
 // should not be copied once initialized. To start using a registry, call the
 // Start method. Once a registry has been terminated, it cannot be used to
 // generate any additional cards, and a new registry will need to be created
 // from scratch
-type CardRegistry struct {
+type cardRegistry struct {
 	status            status
 	statusMtx         *sync.RWMutex
 	registeredEntries []*registryBingoCard
@@ -81,8 +81,8 @@ type CardRegistry struct {
 
 // newCardRegistry produces a new instance of a CardRegistry. It is not ready to
 // use until you call the .Start method on it.
-func newCardRegistry(rngSeed int64) *CardRegistry {
-	return &CardRegistry{
+func newCardRegistry(rngSeed int64) *cardRegistry {
+	return &cardRegistry{
 		status:            statusIdle,
 		registeredEntries: nil,
 		entriesMtx:        &sync.Mutex{},
@@ -94,7 +94,7 @@ func newCardRegistry(rngSeed int64) *CardRegistry {
 	}
 }
 
-func (cr *CardRegistry) getStatus() status {
+func (cr *cardRegistry) getStatus() status {
 	cr.statusMtx.RLock()
 	defer cr.statusMtx.Unlock()
 	return cr.status
@@ -106,7 +106,7 @@ func (cr *CardRegistry) getStatus() status {
 // for uniqueness can take some time to run.)
 // This method is meant to be a background operation, so we need to be very
 // mindful of how long we keep things locked for each operation.
-func (cr *CardRegistry) equalizeEntrySurplus() {
+func (cr *cardRegistry) equalizeEntrySurplus() {
 	// Add any needed surplus
 	availableCards := 0
 	for availableCards < minEntrySurplus {
@@ -156,7 +156,7 @@ func (cr *CardRegistry) equalizeEntrySurplus() {
 // flushReturn marks a bingo card as ready to be reused by another player.
 // Reusing existing cards helps minimize the costs of generating new cards on
 // a regular basis.
-func (cr *CardRegistry) flushReturn(cardID uuid.UUID) {
+func (cr *cardRegistry) flushReturn(cardID uuid.UUID) {
 	cr.entriesMtx.Lock()
 	defer cr.entriesMtx.Unlock()
 
@@ -172,7 +172,7 @@ func (cr *CardRegistry) flushReturn(cardID uuid.UUID) {
 // already terminated. The method returns a cleanup function for terminating the
 // registry. Calling the cleanup function multiple times is fine – all calls
 // after the first become no-ops
-func (cr *CardRegistry) Start() (func(), error) {
+func (cr *cardRegistry) Start() (func(), error) {
 	status := cr.getStatus()
 	if status == statusTerminated {
 		return nil, errors.New("trying to start terminated CardGen")
@@ -223,7 +223,7 @@ func (cr *CardRegistry) Start() (func(), error) {
 // generateUniqueEntry creates a new entry for the registry, making sure that it
 // follows some requirements for being unique relative to all other registered
 // cards.
-func (cr *CardRegistry) generateUniqueEntry() (*registryBingoCard, error) {
+func (cr *cardRegistry) generateUniqueEntry() (*registryBingoCard, error) {
 	// Looked into trying to split up the unlocking logic, since there's a
 	// chance that the uniqueness generation could take a while. That felt way
 	// too risky, since even if we lock in two steps (once for grabbing
@@ -279,7 +279,7 @@ func (cr *CardRegistry) generateUniqueEntry() (*registryBingoCard, error) {
 // currently being used. If one could be found, the card is updated to an active
 // state and the player ID's is registered with it. Returns nil if none could be
 // found.
-func (cr *CardRegistry) checkOutRecycledEntry(playerID uuid.UUID) *registryBingoCard {
+func (cr *cardRegistry) checkOutRecycledEntry(playerID uuid.UUID) *registryBingoCard {
 	cr.entriesMtx.Lock()
 	defer cr.entriesMtx.Unlock()
 
@@ -299,7 +299,7 @@ func (cr *CardRegistry) checkOutRecycledEntry(playerID uuid.UUID) *registryBingo
 // bingo cards that the player has used already. Errors if the method is called
 // while CardRegistry is not running, or if the Registry cannot find a card for
 // the player.
-func (cr *CardRegistry) CheckOutCard(playerID uuid.UUID) (*bingo.Card, error) {
+func (cr *cardRegistry) CheckOutCard(playerID uuid.UUID) (*bingo.Card, error) {
 	status := cr.getStatus()
 	if status == statusIdle {
 		return nil, errors.New("must Start CardGen before calling other methods")
@@ -360,7 +360,7 @@ func (cr *CardRegistry) CheckOutCard(playerID uuid.UUID) (*bingo.Card, error) {
 // returned, a card is allowed to be given out to other players, but a player
 // will never receive a card they have already returned if they call CheckOut in
 // the future. Errors if the method is called while CardRegistry is not running.
-func (cr *CardRegistry) ReturnCard(cardID uuid.UUID) error {
+func (cr *cardRegistry) ReturnCard(cardID uuid.UUID) error {
 	status := cr.getStatus()
 	if status == statusIdle {
 		return errors.New("must Start CardGen before returning card")

@@ -8,22 +8,22 @@ import (
 	"github.com/Parkreiner/bingo"
 )
 
-// BallRegistry manages all bingo balls in a round of bingo. The registry can be
+// ballRegistry manages all bingo balls in a round of bingo. The registry can be
 // reused across multiple rounds.
-type BallRegistry struct {
+type ballRegistry struct {
 	called   []bingo.Ball
 	uncalled []bingo.Ball
-	shuffler *Shuffler
+	shuffler *shuffler
 	mtx      *sync.Mutex
 }
 
 // newBallRegistry creates a new instance of a bingo ball registry
-func newBallRegistry(rngSeed int64) *BallRegistry {
-	shuffler := NewShuffler(rngSeed)
-	uncalled := GenerateBingoBallsForRange(1, 75)
-	shuffler.ShuffleBingoBalls(uncalled)
+func newBallRegistry(rngSeed int64) *ballRegistry {
+	shuffler := newShuffler(rngSeed)
+	uncalled := generateBingoBallsForRange(1, 75)
+	shuffler.shuffleBingoBalls(uncalled)
 
-	return &BallRegistry{
+	return &ballRegistry{
 		called:   nil,
 		uncalled: uncalled,
 		shuffler: shuffler,
@@ -33,7 +33,7 @@ func newBallRegistry(rngSeed int64) *BallRegistry {
 
 // NextAutomaticCall has the registry produce the next value for a game of
 // bingo. Helpful if you don't have any in-person bingo ball machines.
-func (a *BallRegistry) NextAutomaticCall() (bingo.Ball, error) {
+func (a *ballRegistry) NextAutomaticCall() (bingo.Ball, error) {
 	a.mtx.Lock()
 	defer a.mtx.Unlock()
 
@@ -49,7 +49,7 @@ func (a *BallRegistry) NextAutomaticCall() (bingo.Ball, error) {
 
 // SyncManualCall tells the registry which bingo ball was just called from an
 // in-person bingo machine.
-func (a *BallRegistry) SyncManualCall(ball bingo.Ball) error {
+func (a *ballRegistry) SyncManualCall(ball bingo.Ball) error {
 	a.mtx.Lock()
 	defer a.mtx.Unlock()
 
@@ -77,12 +77,12 @@ func (a *BallRegistry) SyncManualCall(ball bingo.Ball) error {
 
 // Reset reverts the state of the bingo ball registry to its initial state.
 // Should be called at the start of each round of bingo.
-func (a *BallRegistry) Reset() {
+func (a *ballRegistry) Reset() {
 	a.mtx.Lock()
 	defer a.mtx.Unlock()
 
-	newUncalled := GenerateBingoBallsForRange(1, 75)
-	a.shuffler.ShuffleBingoBalls(newUncalled)
+	newUncalled := generateBingoBallsForRange(1, 75)
+	a.shuffler.shuffleBingoBalls(newUncalled)
 	a.called = nil
 	a.uncalled = newUncalled
 }
