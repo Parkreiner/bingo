@@ -95,7 +95,9 @@ const (
 	// created, but it hasn't been connected to any other parts of the program,
 	// and is effectively inert. Once the game leaves this phase, it cannot ever
 	// return to this phase
-	GamePhaseInitialized           GamePhase = "initialized"
+	GamePhaseInitialized GamePhase = "initialized"
+	// GamePhaseInitializationFailure indicates that a game could not be
+	// initialized. The game will be unable to be used.
 	GamePhaseInitializationFailure GamePhase = "initialization_failure"
 	// GamePhaseRoundStart represents when a new round has just started. It can
 	// be considered an upkeep step for updating state that only updates at the
@@ -129,6 +131,8 @@ const (
 	GamePhaseGameOver GamePhase = "game_over"
 )
 
+// AllGamePhases is a slice of all game phases. It should be treated as a
+// readonly slice for the entire lifetime of the program.
 var AllGamePhases = []GamePhase{
 	GamePhaseInitialized,
 	GamePhaseInitializationFailure,
@@ -140,6 +144,7 @@ var AllGamePhases = []GamePhase{
 	GamePhaseGameOver,
 }
 
+// PlayerStatus indicates the status of a player
 type PlayerStatus string
 
 const (
@@ -161,6 +166,8 @@ type Player struct {
 
 var _ json.Marshaler = &Player{}
 
+// MarshalJSON serializes all values from Player that are safe to serialize, and
+// skips over the rest
 func (p *Player) MarshalJSON() ([]byte, error) {
 	type PlayerWithoutReceiver struct {
 		ID     uuid.UUID    `json:"id"`
@@ -182,9 +189,9 @@ func (p *Player) MarshalJSON() ([]byte, error) {
 // PlayerSuspension represents how long a player will be in time out for being
 // a pain in the butt to the other users in the room
 type PlayerSuspension struct {
-	PlayerID     uuid.UUID `json:"player_id"`
-	Duration     int       `json:"duration"`
-	CurrentRound int       `json:"current_round"`
+	PlayerID      uuid.UUID `json:"player_id"`
+	RoundDuration int       `json:"duration"`
+	RoundsPassed  int       `json:"current_round"`
 }
 
 // GameManager is a stateful representation of a bingo game. It is able to

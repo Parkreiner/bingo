@@ -35,26 +35,30 @@ type Game struct {
 	cardRegistry cardRegistry
 	ballRegistry ballRegistry
 	host         *bingo.Player
+	// cardPlayers represents all the players currently in the game (minus the
+	// host)
+	cardPlayers []*playerEntry
+	// bingoCallerPlayerIDs refers to all players who are currently claiming to
+	// have bingo.
+	bingoCallerPlayerIDs []uuid.UUID
 	// winningPlayers keeps track of which player(s) were responsible for
 	// winning a given round. The whole player is stored because it's possible
 	// for a player to leave the game, so there's no guarantee that an ID in
-	// winningPlayers would match with the players field. This field cannot be
-	// used to derive the round count, because it's possible for multiple
+	// winningPlayers would match with the cardPlayers field. This field cannot
+	// be used to derive the round count, because it's possible for multiple
 	// players to win in a single round.
-	winningPlayers       []*bingo.Player
-	bingoCallerPlayerIDs []uuid.UUID
-	suspensions          []*bingo.PlayerSuspension
-	bannedPlayerIDs      []uuid.UUID
-	cardPlayers          []*playerEntry
-	id                   uuid.UUID
-	phase                bingo.GamePhase
-	systemID             uuid.UUID
-	currentRound         int
-	maxRounds            int
-	maxPlayers           int
-	dispose              func()
-	commandChan          chan bingo.GameCommand
-	mtx                  sync.Mutex
+	winningPlayers  []*bingo.Player
+	suspensions     []*bingo.PlayerSuspension
+	bannedPlayerIDs []uuid.UUID
+	id              uuid.UUID
+	phase           bingo.GamePhase
+	systemID        uuid.UUID
+	currentRound    int
+	maxRounds       int
+	maxPlayers      int
+	dispose         func()
+	commandChan     chan bingo.GameCommand
+	mtx             sync.Mutex
 	// It is assumed that the map will be initialized with one entry per game
 	// phase when a new game is instantiated
 	phaseSubscriptions map[bingo.GamePhase][]chan bingo.GameEvent
@@ -114,6 +118,7 @@ func New(init Init) (*Game, error) {
 	// the initialization
 	terminateCardRegistry, err := game.cardRegistry.Start()
 	if err != nil {
+		game.phase = bingo.GamePhaseInitializationFailure
 		return nil, fmt.Errorf("initializing game: %v", err)
 	}
 
@@ -230,15 +235,7 @@ func (g *Game) JoinGame(playerID uuid.UUID, playerName string) (*bingo.Player, f
 // emitted during a given phase. There is no filtering beyond that – if the game
 // is in the phase that was subscribed to, ALL events for all users will be
 // emitted
-func (g *Game) SubscribeToPhaseEvents(bingo.GamePhase) (<-chan bingo.GameEvent, func(), error) {
-	return nil, func() {}, nil
-}
-
-// SubscribeToAllEvents is a convenience method for subscribing to all
-// possible phase events. It is fully equivalent to calling the
-// SubscribeToPhaseEvents method once for each phase type, and then stiching
-// the resulting return types together manually.
-func (g *Game) SubscribeToAllEvents() (<-chan bingo.GameEvent, func(), error) {
+func (g *Game) SubscribeToPhaseEvents(phase bingo.GamePhase) (<-chan bingo.GameEvent, func(), error) {
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
 
@@ -246,11 +243,50 @@ func (g *Game) SubscribeToAllEvents() (<-chan bingo.GameEvent, func(), error) {
 		return nil, nil, errors.New("cannot subscribe to game that has been terminated")
 	}
 
-	var phaseEmitters []chan bingo.GameEvent
+	newEmitter := make(chan bingo.GameEvent)
+	g.phaseSubscriptions[phase] = append(g.phaseSubscriptions[phase], newEmitter)
+
+	subscribed := true
+	unsubscribe := func() {
+		if !subscribed {
+			return
+		}
+
+		g.mtx.Lock()
+		defer g.mtx.Unlock()
+
+		var filtered []chan bingo.GameEvent
+		for _, emitter := range g.phaseSubscriptions[phase] {
+			if emitter != newEmitter {
+				filtered = append(filtered, emitter)
+			}
+		}
+
+		g.phaseSubscriptions[phase] = filtered
+		close(newEmitter)
+		subscribed = false
+	}
+
+	return newEmitter, unsubscribe, nil
+}
+
+// SubscribeToAllEvents is a convenience method for subscribing to all
+// possible phase events. It is fully equivalent to calling the
+// SubscribeToPhaseEvents method once for each phase type, and then stitching
+// the resulting return types together manually.
+func (g *Game) SubscribeToAllEvents() (<-chan bingo.GameEvent, func(), error) {
+	g.mtx.Lock()
+	defer g.mtx.Unlock()
+
+	var phaseEmitters []<-chan bingo.GameEvent
+	var unsubCallbacks []func()
 	for _, gp := range bingo.AllGamePhases {
-		newEmitter := make(chan bingo.GameEvent)
+		newEmitter, unsub, err := g.SubscribeToPhaseEvents(gp)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to subscribe for phase %q: %v", gp, err)
+		}
 		phaseEmitters = append(phaseEmitters, newEmitter)
-		g.phaseSubscriptions[gp] = append(g.phaseSubscriptions[gp], newEmitter)
+		unsubCallbacks = append(unsubCallbacks, unsub)
 	}
 
 	consolidatedEmitter := make(chan bingo.GameEvent)
@@ -282,29 +318,35 @@ func (g *Game) SubscribeToAllEvents() (<-chan bingo.GameEvent, func(), error) {
 		}
 	}()
 
-	cleanup := func() {
+	subscribed := true
+	unsubscribe := func() {
+		if !subscribed {
+			return
+		}
+
 		g.mtx.Lock()
 		defer g.mtx.Unlock()
 
-		for i, phase := range bingo.AllGamePhases {
-			emitterToDispose := phaseEmitters[i]
-			var filtered []chan bingo.GameEvent
-			for _, emitter := range g.phaseSubscriptions[phase] {
-				if emitter != emitterToDispose {
-					filtered = append(filtered, emitter)
-				}
-			}
-			g.phaseSubscriptions[phase] = filtered
-			close(emitterToDispose)
+		for _, cb := range unsubCallbacks {
+			cb()
 		}
-
 		close(consolidatedEmitter)
+		subscribed = false
 	}
 
-	return consolidatedEmitter, cleanup, nil
+	return consolidatedEmitter, unsubscribe, nil
 }
 
 // Command allows the Game to receive direct input from outside sources
-func (g *Game) Command(bingo.GameCommand) error {
+func (g *Game) Command(command bingo.GameCommand) error {
+	g.mtx.Lock()
+	defer g.mtx.Unlock()
+
+	if g.phase == bingo.GamePhaseGameOver ||
+		g.phase == bingo.GamePhaseInitializationFailure {
+		return errors.New("cannot send command while game is terminated")
+	}
+
+	g.commandChan <- command
 	return nil
 }
