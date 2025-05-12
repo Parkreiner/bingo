@@ -5,7 +5,6 @@ package game
 import (
 	"errors"
 	"fmt"
-	"reflect"
 	"sync"
 
 	"github.com/Parkreiner/bingo"
@@ -56,21 +55,19 @@ type Game struct {
 	// winningPlayers would match with the cardPlayers field. This field cannot
 	// be used to derive the round count, because it's possible for multiple
 	// players to win in a single round.
-	winningPlayers  []*bingo.Player
-	suspensions     []*bingo.PlayerSuspension
-	bannedPlayerIDs []uuid.UUID
-	id              uuid.UUID
-	phase           bingo.GamePhase
-	systemID        uuid.UUID
-	currentRound    int
-	maxRounds       int
-	maxPlayers      int
-	dispose         func()
-	commandChan     chan commandSession
-	mtx             sync.Mutex
-	// It is assumed that the map will be initialized with one entry per game
-	// phase when a new game is instantiated
-	phaseSubscriptions map[bingo.GamePhase][]chan bingo.GameEvent
+	winningPlayers     []*bingo.Player
+	suspensions        []*bingo.PlayerSuspension
+	bannedPlayerIDs    []uuid.UUID
+	id                 uuid.UUID
+	phase              bingo.GamePhase
+	systemID           uuid.UUID
+	currentRound       int
+	maxRounds          int
+	maxPlayers         int
+	dispose            func()
+	commandChan        chan commandSession
+	mtx                sync.Mutex
+	phaseSubscriptions subscriptionsManager
 }
 
 var _ bingo.GameManager = &Game{}
@@ -96,16 +93,16 @@ func New(init Init) (*Game, error) {
 	}
 
 	game := &Game{
-		systemID:     init.systemID,
-		host:         host,
-		maxRounds:    defaultMaxRounds,
-		maxPlayers:   defaultMaxPlayers,
-		ballRegistry: *newBallRegistry(init.rngSeed),
-		cardRegistry: *newCardRegistry(init.rngSeed),
+		systemID:           init.systemID,
+		host:               host,
+		maxRounds:          defaultMaxRounds,
+		maxPlayers:         defaultMaxPlayers,
+		ballRegistry:       *newBallRegistry(init.rngSeed),
+		cardRegistry:       *newCardRegistry(init.rngSeed),
+		phaseSubscriptions: newSubscriptionsManager(),
 
 		// Unbuffered to have synchronization guarantees
 		commandChan:          make(chan commandSession),
-		phaseSubscriptions:   make(map[bingo.GamePhase][]chan bingo.GameEvent),
 		id:                   uuid.New(),
 		phase:                bingo.GamePhaseInitialized,
 		currentRound:         0,
@@ -129,10 +126,6 @@ func New(init Init) (*Game, error) {
 	if err != nil {
 		game.phase = bingo.GamePhaseInitializationFailure
 		return nil, fmt.Errorf("initializing game: %v", err)
-	}
-
-	for _, gp := range bingo.AllGamePhases {
-		game.phaseSubscriptions[gp] = nil
 	}
 
 	disposed := false
@@ -281,98 +274,7 @@ func (g *Game) SubscribeToPhaseEvents(phase bingo.GamePhase) (<-chan bingo.GameE
 		return nil, nil, errors.New("cannot subscribe to game that has been terminated")
 	}
 
-	newEmitter := make(chan bingo.GameEvent)
-	g.phaseSubscriptions[phase] = append(g.phaseSubscriptions[phase], newEmitter)
-
-	subscribed := true
-	unsubscribe := func() {
-		if !subscribed {
-			return
-		}
-
-		g.mtx.Lock()
-		defer g.mtx.Unlock()
-
-		var filtered []chan bingo.GameEvent
-		for _, emitter := range g.phaseSubscriptions[phase] {
-			if emitter != newEmitter {
-				filtered = append(filtered, emitter)
-			}
-		}
-
-		g.phaseSubscriptions[phase] = filtered
-		close(newEmitter)
-		subscribed = false
-	}
-
-	return newEmitter, unsubscribe, nil
-}
-
-// SubscribeToAllEvents is a convenience method for subscribing to all
-// possible phase events. It is fully equivalent to calling the
-// SubscribeToPhaseEvents method once for each phase type, and then stitching
-// the resulting return types together manually.
-func (g *Game) SubscribeToAllEvents() (<-chan bingo.GameEvent, func(), error) {
-	g.mtx.Lock()
-	defer g.mtx.Unlock()
-
-	var phaseEmitters []<-chan bingo.GameEvent
-	var unsubCallbacks []func()
-	for _, gp := range bingo.AllGamePhases {
-		newEmitter, unsub, err := g.SubscribeToPhaseEvents(gp)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to subscribe for phase %q: %v", gp, err)
-		}
-		phaseEmitters = append(phaseEmitters, newEmitter)
-		unsubCallbacks = append(unsubCallbacks, unsub)
-	}
-
-	consolidatedEmitter := make(chan bingo.GameEvent)
-	go func() {
-		var selectCases []reflect.SelectCase
-		for _, pe := range phaseEmitters {
-			selectCases = append(selectCases, reflect.SelectCase{
-				Dir:  reflect.SelectRecv,
-				Chan: reflect.ValueOf(pe),
-			})
-		}
-
-		closeCount := 0
-		for {
-			_, value, closed := reflect.Select(selectCases)
-			if closed {
-				closeCount++
-				if closeCount == len(phaseEmitters)-1 {
-					break
-				}
-				continue
-			}
-
-			converted, ok := value.Interface().(bingo.GameEvent)
-			if !ok {
-				break
-			}
-			consolidatedEmitter <- converted
-		}
-	}()
-
-	subscribed := true
-	unsubscribe := func() {
-		if !subscribed {
-			return
-		}
-
-		g.mtx.Lock()
-		defer g.mtx.Unlock()
-
-		for _, cb := range unsubCallbacks {
-			cb()
-		}
-		close(consolidatedEmitter)
-		subscribed = false
-	}
-
-	return consolidatedEmitter, unsubscribe, nil
+	return g.phaseSubscriptions.subscribeToPhaseEvents(phase)
 }
 
 // Command allows the Game to receive direct input from outside sources
