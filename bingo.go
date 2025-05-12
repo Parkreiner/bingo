@@ -41,12 +41,12 @@ func (b Ball) MarshalJSON() ([]byte, error) {
 }
 
 // ParseBall takes any arbitrary int, and attempts to turn it into a bingo ball.
-// Will error if the provided value is below 1 or 75.
+// Will error if the provided value is above 75 or below 0
 func ParseBall(rawBallValue int) (Ball, error) {
 	if rawBallValue > MaxBallValue {
 		return FreeSpace, fmt.Errorf("value %d is not allowed to exceed %d", rawBallValue, MaxBallValue)
 	}
-	if rawBallValue <= 0 {
+	if rawBallValue < 0 {
 		return FreeSpace, fmt.Errorf("value %d is not allowed to fall below 0", rawBallValue)
 	}
 	return Ball(rawBallValue), nil
