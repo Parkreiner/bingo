@@ -211,7 +211,7 @@ type GameManager interface {
 	// JoinGame allows a user to join a game and become a player. The resulting
 	// player struct will have the same ID provided as input. Should error out
 	// if a host tries to join a game they're currently hosting
-	JoinGame(playerID uuid.UUID, playerName string) (player *Player, leaveGame func(), err error)
+	JoinGame(playerID uuid.UUID, playerName string) (player *Player, leaveGame func() error, err error)
 	// SubscribeToPhaseEvents allows an external system to subscribe to all
 	// events for a given phase type. An easy way to subscribe to all events is
 	// to iterate over the AllGamePhases slice, and call this method for each

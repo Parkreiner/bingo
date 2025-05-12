@@ -26,8 +26,13 @@ type playerEntry struct {
 	// channel communication, while the player version enforces receive-only
 	// communication at the type level
 	eventChan chan bingo.GameEvent
-	leaveGame func()
+	leaveGame func() error
 	player    *bingo.Player
+}
+
+type commandSession struct {
+	command   bingo.GameCommand
+	errorChan chan<- error
 }
 
 // Game is an implementation of the bingo.GameManager interface
@@ -35,9 +40,9 @@ type Game struct {
 	cardRegistry cardRegistry
 	ballRegistry ballRegistry
 	host         *bingo.Player
-	// cardPlayers represents all the players currently in the game (minus the
+	// cardPlayerEntries represents all the players currently in the game (minus the
 	// host)
-	cardPlayers []*playerEntry
+	cardPlayerEntries []*playerEntry
 	// bingoCallerPlayerIDs refers to all players who are currently claiming to
 	// have bingo.
 	bingoCallerPlayerIDs []uuid.UUID
@@ -57,7 +62,7 @@ type Game struct {
 	maxRounds       int
 	maxPlayers      int
 	dispose         func()
-	commandChan     chan bingo.GameCommand
+	commandChan     chan commandSession
 	mtx             sync.Mutex
 	// It is assumed that the map will be initialized with one entry per game
 	// phase when a new game is instantiated
@@ -95,12 +100,12 @@ func New(init Init) (*Game, error) {
 		cardRegistry: *newCardRegistry(init.rngSeed),
 
 		// Unbuffered to have synchronization guarantees
-		commandChan:          make(chan bingo.GameCommand),
+		commandChan:          make(chan commandSession),
 		phaseSubscriptions:   make(map[bingo.GamePhase][]chan bingo.GameEvent),
-		phase:                bingo.GamePhaseInitialized,
 		id:                   uuid.New(),
+		phase:                bingo.GamePhaseInitialized,
 		currentRound:         0,
-		cardPlayers:          nil,
+		cardPlayerEntries:    nil,
 		winningPlayers:       nil,
 		bingoCallerPlayerIDs: nil,
 		suspensions:          nil,
@@ -137,8 +142,9 @@ func New(init Init) (*Game, error) {
 	}
 
 	go func() {
-		for event := range game.commandChan {
-			game.processQueuedCommand(event)
+		for session := range game.commandChan {
+			err := game.processQueuedCommand(session.command)
+			session.errorChan <- err
 		}
 	}()
 
@@ -150,7 +156,7 @@ func (g *Game) processQueuedCommand(bingo.GameCommand) error {
 }
 
 // JoinGame allows a player to join a game as a normal player. Trying to
-func (g *Game) JoinGame(playerID uuid.UUID, playerName string) (*bingo.Player, func(), error) {
+func (g *Game) JoinGame(playerID uuid.UUID, playerName string) (*bingo.Player, func() error, error) {
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
 
@@ -165,15 +171,15 @@ func (g *Game) JoinGame(playerID uuid.UUID, playerName string) (*bingo.Player, f
 	}
 
 	// Only make a new entry if it doesn't exist in the game at all
-	var entry *playerEntry
-	for _, p := range g.cardPlayers {
-		if p.player.ID == playerID {
-			entry = p
+	var prevEntry *playerEntry
+	for _, e := range g.cardPlayerEntries {
+		if e.player.ID == playerID {
+			prevEntry = e
 			break
 		}
 	}
-	if entry != nil {
-		return entry.player, entry.leaveGame, nil
+	if prevEntry != nil {
+		return prevEntry.player, prevEntry.leaveGame, nil
 	}
 
 	var cards []*bingo.Card
@@ -192,7 +198,7 @@ func (g *Game) JoinGame(playerID uuid.UUID, playerName string) (*bingo.Player, f
 	if g.phase == bingo.GamePhaseRoundStart {
 		status = bingo.PlayerStatusActive
 	}
-	entry = &playerEntry{
+	newEntry := &playerEntry{
 		eventChan: eventChan,
 		player: &bingo.Player{
 			Status:        status,
@@ -201,27 +207,43 @@ func (g *Game) JoinGame(playerID uuid.UUID, playerName string) (*bingo.Player, f
 			Cards:         cards,
 			EventReceiver: eventChan,
 		},
-		leaveGame: func() {
-			g.mtx.Lock()
-			defer g.mtx.Unlock()
-
-			var filtered []*playerEntry
-			for _, p := range g.cardPlayers {
-				if p.player.ID != playerID {
-					filtered = append(filtered, p)
-				}
-			}
-			if len(filtered) == len(g.cardPlayers) {
-				return
-			}
-
-			g.cardPlayers = filtered
-			close(entry.eventChan)
-		},
+		leaveGame: nil,
 	}
-	g.cardPlayers = append(g.cardPlayers, entry)
+	newEntry.leaveGame = func() error {
+		g.mtx.Lock()
+		defer g.mtx.Unlock()
 
-	return entry.player, entry.leaveGame, nil
+		var removedEntry *playerEntry
+		var filtered []*playerEntry
+		for _, e := range g.cardPlayerEntries {
+			if e.player.ID == playerID {
+				removedEntry = e
+			} else {
+				filtered = append(filtered, e)
+			}
+		}
+		if len(filtered) == len(g.cardPlayerEntries) {
+			return nil
+		}
+
+		g.cardPlayerEntries = filtered
+		var cardReturnErr error
+		for _, card := range removedEntry.player.Cards {
+			// Don't stop at the first error found, because there's a chance
+			// that the other cards can still be returned/recycled for future
+			// rounds with other players
+			err := g.cardRegistry.ReturnCard(card.ID)
+			if err != nil {
+				cardReturnErr = err
+			}
+		}
+
+		close(newEntry.eventChan)
+		return cardReturnErr
+	}
+
+	g.cardPlayerEntries = append(g.cardPlayerEntries, newEntry)
+	return newEntry.player, newEntry.leaveGame, nil
 }
 
 // SubscribeToPhaseEvents lets an external system subscribe to all events
@@ -340,6 +362,17 @@ func (g *Game) Command(command bingo.GameCommand) error {
 		return errors.New("cannot send command while game is terminated")
 	}
 
-	g.commandChan <- command
+	channel := make(chan error)
+	defer close(channel)
+	g.commandChan <- commandSession{
+		command:   command,
+		errorChan: channel,
+	}
+
+	err := <-channel
+	if err == nil {
+		return nil
+	}
+
 	return nil
 }
