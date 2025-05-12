@@ -49,7 +49,7 @@ func setDaubValue(game *Game, command bingo.GameCommand, daubValue bool) error {
 		cell.Daubed = daubValue
 		return nil
 	}
-	colIndex := (ball - 1) / bingo.MaxBallValue
+	colIndex := (ball - 1) / bingo.Ball(bingo.MaxBallValue)
 	var cell *bingo.Cell
 	for i := 0; i < 5; i++ {
 		c := card.Cells[i][colIndex]

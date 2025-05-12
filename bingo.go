@@ -11,15 +11,15 @@ import (
 const (
 	// MinCards represents the minimum number of cards a player is allowed to
 	// have in a game.
-	MinCards = 1
+	MinCards int = 1
 
 	// MaxCards represents the maximum number of cards a player is allowed to
 	// have in a game.
-	MaxCards = 6
+	MaxCards int = 6
 
 	// MaxBallValue is the highest bingo ball value that you can possibly have
 	// in an American game of bingo
-	MaxBallValue = 75
+	MaxBallValue int = 75
 )
 
 // Ball represents a single number from 1 to 75 (both inclusive) that can

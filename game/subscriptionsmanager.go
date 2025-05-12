@@ -27,7 +27,7 @@ func newSubscriptionsManager() subscriptionsManager {
 	}
 }
 
-func (sm *subscriptionsManager) pushEvent() error {
+func (sm *subscriptionsManager) dispatchEvent(bingo.GameEvent) error {
 	return errTodo
 }
 
@@ -39,8 +39,8 @@ func (sm *subscriptionsManager) subscribeToPhaseEvents(phase bingo.GamePhase) (<
 	sm.mtx.Lock()
 	defer sm.mtx.Unlock()
 
-	newEmitter := make(chan bingo.GameEvent)
-	sm.subs[phase] = append(sm.subs[phase], newEmitter)
+	newChan := make(chan bingo.GameEvent)
+	sm.subs[phase] = append(sm.subs[phase], newChan)
 
 	subscribed := true
 	unsubscribe := func() {
@@ -52,18 +52,18 @@ func (sm *subscriptionsManager) subscribeToPhaseEvents(phase bingo.GamePhase) (<
 		defer sm.mtx.Unlock()
 
 		var filtered []chan bingo.GameEvent
-		for _, emitter := range sm.subs[phase] {
-			if emitter != newEmitter {
-				filtered = append(filtered, emitter)
+		for _, eventC := range sm.subs[phase] {
+			if eventC != newChan {
+				filtered = append(filtered, eventC)
 			}
 		}
 
 		sm.subs[phase] = filtered
-		close(newEmitter)
+		close(newChan)
 		subscribed = false
 	}
 
-	return newEmitter, unsubscribe, nil
+	return newChan, unsubscribe, nil
 }
 
 // subscribeToAllEvents is a convenience method for subscribing to all
@@ -74,21 +74,21 @@ func (sm *subscriptionsManager) subscribeToAllEvents() (<-chan bingo.GameEvent, 
 	sm.mtx.Lock()
 	defer sm.mtx.Unlock()
 
-	var phaseEmitters []<-chan bingo.GameEvent
+	var phaseChans []<-chan bingo.GameEvent
 	var unsubCallbacks []func()
 	for _, gp := range bingo.AllGamePhases {
-		newEmitter, unsub, err := sm.subscribeToPhaseEvents(gp)
+		newChan, unsub, err := sm.subscribeToPhaseEvents(gp)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to subscribe for phase %q: %v", gp, err)
 		}
-		phaseEmitters = append(phaseEmitters, newEmitter)
+		phaseChans = append(phaseChans, newChan)
 		unsubCallbacks = append(unsubCallbacks, unsub)
 	}
 
-	consolidatedEmitter := make(chan bingo.GameEvent)
+	consolidated := make(chan bingo.GameEvent)
 	go func() {
 		var selectCases []reflect.SelectCase
-		for _, pe := range phaseEmitters {
+		for _, pe := range phaseChans {
 			selectCases = append(selectCases, reflect.SelectCase{
 				Dir:  reflect.SelectRecv,
 				Chan: reflect.ValueOf(pe),
@@ -100,7 +100,7 @@ func (sm *subscriptionsManager) subscribeToAllEvents() (<-chan bingo.GameEvent, 
 			_, value, closed := reflect.Select(selectCases)
 			if closed {
 				closeCount++
-				if closeCount == len(phaseEmitters)-1 {
+				if closeCount == len(phaseChans)-1 {
 					break
 				}
 				continue
@@ -110,7 +110,7 @@ func (sm *subscriptionsManager) subscribeToAllEvents() (<-chan bingo.GameEvent, 
 			if !ok {
 				break
 			}
-			consolidatedEmitter <- converted
+			consolidated <- converted
 		}
 	}()
 
@@ -126,9 +126,9 @@ func (sm *subscriptionsManager) subscribeToAllEvents() (<-chan bingo.GameEvent, 
 		for _, cb := range unsubCallbacks {
 			cb()
 		}
-		close(consolidatedEmitter)
+		close(consolidated)
 		subscribed = false
 	}
 
-	return consolidatedEmitter, unsubscribe, nil
+	return consolidated, unsubscribe, nil
 }
