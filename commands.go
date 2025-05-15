@@ -48,6 +48,7 @@ const (
 	GameCommandPlayerDaub         GameCommandType = "player_daub"
 	GameCommandPlayerUndoDaub     GameCommandType = "player_undo_daub"
 	GameCommandPlayerCallBingo    GameCommandType = "player_call_bingo"
+	GameCommandPlayerRescindBingo GameCommandType = "player_rescind_bingo"
 	GameCommandPlayerReplaceCards GameCommandType = "player_replace_cards"
 )
 
@@ -58,28 +59,29 @@ const (
 // 2. Hosts
 // 3. System (assumed to be whichever part of the app instantiated a game)
 type GameCommand struct {
-	Type              GameCommandType `json:"type"`
-	CommanderEntityID uuid.UUID       `json:"command_entity_id"`
 	// In TypeScript terms, Payload is any Record<string, unknown> type; it is
 	// a JSON object that can contain any values. An accompanying struct type is
 	// defined for each command type that needs a payload, so that you can parse
-	// the payload with more type-safety. If a payload is *not* defined, you can
-	// assume the payload is empty/does not exist for that command type
-	Payload json.RawMessage `json:"payload,omitempty"`
+	// the payload with more type-safety. If an extra payload struct type
+	// is *not* defined, you can assume the payload is empty/does not exist for
+	// that command type
+	Payload     json.RawMessage `json:"payload,omitempty"`
+	Type        GameCommandType `json:"type"`
+	CommanderID uuid.UUID       `json:"commanderId"`
 }
 
 type GameCommandPayloadSystemBroadcastState struct {
 	// If the slice is nil/empty, it's assumed that the state should be
 	// broadcast to all possible subscribers
-	RecipientIDs []uuid.UUID `json:"recipient_ids"`
+	RecipientIDs []uuid.UUID `json:"recipientIds"`
 }
 
 type GameCommandPayloadTransferHostStatus struct {
-	NewHostID []uuid.UUID `json:"new_host_id"`
+	NewHostID []uuid.UUID `json:"newHostId"`
 }
 
 type GameCommandPayloadHostBanPlayer struct {
-	PlayerID uuid.UUID `json:"player_id"`
+	PlayerID uuid.UUID `json:"playerId"`
 }
 
 type GameCommandPayloadHostSuspendPlayer struct {
@@ -89,7 +91,7 @@ type GameCommandPayloadHostSuspendPlayer struct {
 type GameCommandPayloadHostAwardsPlayers struct {
 	// It is assumed that this field always has one element in it. If there are
 	// no IDs, that results in an error.
-	PlayerIDs []uuid.UUID `json:"player_ids"`
+	PlayerIDs []uuid.UUID `json:"playerIds"`
 }
 
 type GameCommandPayloadHostSyncBall struct {
@@ -97,11 +99,11 @@ type GameCommandPayloadHostSyncBall struct {
 }
 
 type GameCommandPayloadPlayerDaub struct {
-	CardID uuid.UUID `json:"card_id"`
-	Value  int       `json:"value"`
+	CardID uuid.UUID `json:"cardId"`
+	Cell   int       `json:"cell"`
 }
 
 type GameCommandPayloadPlayerUndoDaub struct {
-	CardID uuid.UUID `json:"card_id"`
+	CardID uuid.UUID `json:"cardId"`
 	Value  int       `json:"value"`
 }

@@ -78,7 +78,7 @@ type Card struct {
 	// The free space is represented as 0.
 	Cells    [][]*Cell `json:"cells"`
 	ID       uuid.UUID `json:"id"`
-	PlayerID uuid.UUID `json:"player_id"`
+	PlayerID uuid.UUID `json:"playerId"`
 }
 
 const maxPlayerCapacity = 50
@@ -187,9 +187,9 @@ func (p *Player) MarshalJSON() ([]byte, error) {
 // PlayerSuspension represents how long a player will be in time out for being
 // a pain in the butt to the other users in the room
 type PlayerSuspension struct {
-	PlayerID      uuid.UUID `json:"player_id"`
+	PlayerID      uuid.UUID `json:"playerId"`
 	RoundDuration int       `json:"duration"`
-	RoundsPassed  int       `json:"current_round"`
+	RoundsPassed  int       `json:"currentRound"`
 }
 
 // GameManager is a stateful representation of a bingo game. It is able to

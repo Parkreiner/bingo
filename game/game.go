@@ -152,13 +152,13 @@ func (g *Game) routeCommand(command bingo.GameCommand) error {
 	switch command.Type {
 	// System commands
 	case bingo.GameCommandSystemDispose:
-		return g.processSystemDispose(command.CommanderEntityID)
+		return g.processSystemDispose(command.CommanderID)
 	case bingo.GameCommandSystemBroadcastState:
-		return g.processSystemBroadcastState(command.CommanderEntityID)
+		return g.processSystemBroadcastState(command.CommanderID)
 
 	// Host commands
 	case bingo.GameCommandHostStartGame:
-		return g.processHostStartGame(command.CommanderEntityID)
+		return g.processHostStartGame(command.CommanderID)
 
 	// Player commands
 	case bingo.GameCommandPlayerDaub:

@@ -28,7 +28,7 @@ export type PlayerSessionState = Readonly<{
 
 export type GameCommand = Readonly<{
   type: string;
-  entityId: string;
+  commanderId: string;
   payload?: Record<string, unknown>;
 }>;
 
@@ -149,7 +149,7 @@ export function usePlayerSocket(): UsePlayerSocketResult {
 
         const command: GameCommand = {
           type: "player_daub",
-          entityId: sessionState.playerId,
+          commanderId: sessionState.playerId,
           payload: { cardId, cell },
         };
         const socket = getSocket();
@@ -163,7 +163,7 @@ export function usePlayerSocket(): UsePlayerSocketResult {
 
         const command: GameCommand = {
           type: "player_undo_daub",
-          entityId: sessionState.playerId,
+          commanderId: sessionState.playerId,
           payload: { cardId, cell },
         };
         const socket = getSocket();
@@ -174,8 +174,7 @@ export function usePlayerSocket(): UsePlayerSocketResult {
         const socket = getSocket();
         const command: GameCommand = {
           type: "player_replace_cards",
-          entityId: sessionState.playerId,
-          payload: {},
+          commanderId: sessionState.playerId,
         };
         socket.send(JSON.stringify(command));
       },
@@ -183,8 +182,7 @@ export function usePlayerSocket(): UsePlayerSocketResult {
         const socket = getSocket();
         const command: GameCommand = {
           type: "player_call_bingo",
-          entityId: sessionState.playerId,
-          payload: {},
+          commanderId: sessionState.playerId,
         };
         socket.send(JSON.stringify(command));
       },
@@ -192,8 +190,7 @@ export function usePlayerSocket(): UsePlayerSocketResult {
         const socket = getSocket();
         const command: GameCommand = {
           type: "player_rescind_bingo",
-          entityId: sessionState.playerId,
-          payload: {},
+          commanderId: sessionState.playerId,
         };
         socket.send(JSON.stringify(command));
       },

@@ -18,12 +18,13 @@ type Room struct {
 	events   []bingo.GameEvent
 }
 
-type clientRoomSnapshot struct {
-	ID             uuid.UUID               `json:"id"`
-	JoinCode       JoinCode                `json:"join_code"`
+type playerSessionSnapshot struct {
+	RoomID         uuid.UUID               `json:"roomId"`
+	PlayerID       uuid.UUID               `json:"playerId"`
+	JoinCode       JoinCode                `json:"joinCode"`
 	Phase          bingo.GamePhase         `json:"phase"`
-	PlayerCount    int                     `json:"player_count"`
-	WinningPlayers []bingo.Player          `json:"winning_players"`
+	PlayerCount    int                     `json:"playerCount"`
+	WinningPlayers []bingo.Player          `json:"winningPlayers"`
 	Suspension     *bingo.PlayerSuspension `json:"suspension"`
 	Cards          []bingo.Card            `json:"cards"`
 	Events         []bingo.GameEvent       `json:"events"`

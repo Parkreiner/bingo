@@ -21,22 +21,22 @@ func setDaubValue(game *Game, command bingo.GameCommand, daubValue bool) error {
 
 	var player *bingo.Player
 	for _, e := range game.cardPlayerEntries {
-		if e.player.ID == command.CommanderEntityID {
+		if e.player.ID == command.CommanderID {
 			player = e.player
 			break
 		}
 	}
 	if player == nil {
-		return fmt.Errorf("user with ID %q is not in game", command.CommanderEntityID)
+		return fmt.Errorf("user with ID %q is not in game", command.CommanderID)
 	}
 
 	parsed := &bingo.GameCommandPayloadPlayerDaub{}
 	if err := json.Unmarshal(command.Payload, parsed); err != nil {
 		return fmt.Errorf("unable to parse daub payload: %v", err)
 	}
-	ball, err := bingo.ParseBall(parsed.Value)
+	ball, err := bingo.ParseBall(parsed.Cell)
 	if err != nil {
-		return fmt.Errorf("%d is not a valid bingo ball", parsed.Value)
+		return fmt.Errorf("%d is not a valid bingo ball", parsed.Cell)
 	}
 
 	var card *bingo.Card
