@@ -1,4 +1,6 @@
-package logger
+// Package eventfilelogger provides an easy way to write logs describing game
+// events to a specific file.
+package eventfilelogger
 
 import (
 	"errors"
@@ -19,6 +21,11 @@ type loggerRequest struct {
 	resultChan chan<- logWriteResult
 }
 
+// EventFileLogger handles logs of two types:
+// 1. Automatic logs in response to every game event
+// 2.
+// Once instantiated, the logger will automatically start logging any events for
+// phase types. The logger can be disposed by calling the Close method.
 type EventFileLogger struct {
 	file         *os.File
 	loggerChan   chan loggerRequest
@@ -27,15 +34,18 @@ type EventFileLogger struct {
 
 var _ io.WriteCloser = &EventFileLogger{}
 
-type EventFileLoggerInit struct {
+// Init is used to instantiate an EventFileLogger via the New function.
+type Init struct {
 	Subscriber bingo.PhaseSubscriber
-	FilePath   string
+	OutputPath string
 }
 
-func New(init EventFileLoggerInit) (*EventFileLogger, error) {
-	file, err := os.Open(init.FilePath)
+// New instantiaes an EventFileLogger and automatically subscribes it to all
+// events dispatched for every possible game event.
+func New(init Init) (*EventFileLogger, error) {
+	file, err := os.Open(init.OutputPath)
 	if err != nil {
-		return nil, fmt.Errorf("filepath %q does not exist: %v", init.FilePath, err)
+		return nil, fmt.Errorf("filepath %q does not exist: %v", init.OutputPath, err)
 	}
 
 	// Set up subscriptions for each phase type (making sure to close any
@@ -124,19 +134,40 @@ func New(init EventFileLoggerInit) (*EventFileLogger, error) {
 					err:          err,
 				}
 
-			case e := <-initChan:
+			case e, closed := <-initChan:
+				if closed {
+					break
+				}
 				event = &e
-			case e := <-roundStartChan:
+			case e, closed := <-roundStartChan:
+				if closed {
+					break
+				}
 				event = &e
-			case e := <-callingChan:
+			case e, closed := <-callingChan:
+				if closed {
+					break
+				}
 				event = &e
-			case e := <-confirmingChan:
+			case e, closed := <-confirmingChan:
+				if closed {
+					break
+				}
 				event = &e
-			case e := <-tiebreakerChan:
+			case e, closed := <-tiebreakerChan:
+				if closed {
+					break
+				}
 				event = &e
-			case e := <-roundEndChan:
+			case e, closed := <-roundEndChan:
+				if closed {
+					break
+				}
 				event = &e
-			case e := <-gameOverChan:
+			case e, closed := <-gameOverChan:
+				if closed {
+					break
+				}
 				event = &e
 			}
 
@@ -182,6 +213,9 @@ func (efl *EventFileLogger) Write(content []byte) (int, error) {
 	return result.bytesWritten, result.err
 }
 
+// Close terminates an EventFileLogger, rendering it so that it can no longer
+// receive logs. It will also close all open subscriptions. This function is
+// safe to call multiple times; calling it more than once results in a no-op.
 func (efl *EventFileLogger) Close() error {
 	select {
 	case _, closed := <-efl.disposedChan:
