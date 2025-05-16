@@ -95,7 +95,8 @@ const (
 	// return to this phase
 	GamePhaseInitialized GamePhase = "initialized"
 	// GamePhaseInitializationFailure indicates that a game could not be
-	// initialized. The game will be unable to be used.
+	// initialized. The game will be unable to be used, and it is assumed that
+	// any attempts to subscribe to a game in this state should fail.
 	GamePhaseInitializationFailure GamePhase = "initialization_failure"
 	// GamePhaseRoundStart represents when a new round has just started. It can
 	// be considered an upkeep step for updating state that only updates at the
@@ -153,7 +154,8 @@ const (
 	PlayerStatusBanned     PlayerStatus = "banned"
 )
 
-// Player represents any user who is able to join a game as a card-player.
+// Player represents any user who is able to join a game, either as a host or a
+// card-player. If a player is host, their Cards field will be nil/empty.
 type Player struct {
 	Status        PlayerStatus
 	ID            uuid.UUID
@@ -178,6 +180,7 @@ func (p *Player) MarshalJSON() ([]byte, error) {
 		Name:  p.Name,
 		Cards: p.Cards,
 	}
+	// Make sure the slice is allocated and can't be serialized as JSON null
 	if copied.Cards == nil {
 		copied.Cards = []*Card{}
 	}
@@ -192,27 +195,32 @@ type PlayerSuspension struct {
 	RoundsPassed  int       `json:"currentRound"`
 }
 
+// PhaseSubscriber is anything that lets a system listen to all events that can
+// be dispatched for each possible bingo game phase.
+type PhaseSubscriber interface {
+	// SubscribeToPhaseEvents allows an external system to subscribe to all
+	// events for a given phase type
+	SubscribeToPhaseEvents(phase GamePhase) (eventReceiver <-chan GameEvent, unsubscribe func(), err error)
+}
+
 // GameManager is a stateful representation of a bingo game. It is able to
 // receive direct user input, and also let external users subscribe to changes
 // in the game state
 type GameManager interface {
-	// Command allows an entity (e.g., a system, a host, or a player) to make a
-	// command to update the game state. The GameManager implementation should
-	// make sure that the command is valid for that entity to make, and should
-	// handle all possible race conditions from multiple entities calling
-	// Command at the same time.
+	PhaseSubscriber
+
+	// IssueCommand allows an entity (e.g., a system, a host, or a player) to
+	// make a command to update the game state. The GameManager implementation
+	// should make sure that the command is valid for that entity to make, and
+	// should handle all possible race conditions from multiple entities calling
+	// IssueCommand at the same time.
 	//
-	// Command is intended as a lower-level primitive for processing all the
-	// possible events that can happen in a game of bingo. It should not be
-	// connected directly to user input.
-	Command(cmd GameCommand) error
+	// IssueCommand is intended as a lower-level primitive for processing all
+	// the possible types of input that can be added to a game of bingo. It
+	// should *not* be connected directly to user input.
+	IssueCommand(cmd GameCommand) error
 	// JoinGame allows a user to join a game and become a player. The resulting
 	// player struct will have the same ID provided as input. Should error out
 	// if a host tries to join a game they're currently hosting
 	JoinGame(playerID uuid.UUID, playerName string) (player *Player, leaveGame func() error, err error)
-	// SubscribeToPhaseEvents allows an external system to subscribe to all
-	// events for a given phase type. An easy way to subscribe to all events is
-	// to iterate over the AllGamePhases slice, and call this method for each
-	// element
-	SubscribeToPhaseEvents(phase GamePhase) (eventReceiver <-chan GameEvent, unsubscribe func(), err error)
 }

@@ -58,7 +58,6 @@ type Game struct {
 	winningPlayers     []*bingo.Player
 	suspensions        []*bingo.PlayerSuspension
 	bannedPlayerIDs    []uuid.UUID
-	id                 uuid.UUID
 	phase              bingo.GamePhase
 	systemID           uuid.UUID
 	currentRound       int
@@ -74,7 +73,7 @@ var _ bingo.GameManager = &Game{}
 
 // Init is used to instantiate a Game instance via the New function
 type Init struct {
-	systemID   uuid.UUID
+	creatorID  uuid.UUID
 	hostID     uuid.UUID
 	hostName   string
 	rngSeed    int64
@@ -93,7 +92,7 @@ func New(init Init) (*Game, error) {
 	}
 
 	game := &Game{
-		systemID:           init.systemID,
+		systemID:           init.creatorID,
 		host:               host,
 		maxRounds:          defaultMaxRounds,
 		maxPlayers:         defaultMaxPlayers,
@@ -103,7 +102,6 @@ func New(init Init) (*Game, error) {
 
 		// Unbuffered to have synchronization guarantees
 		commandChan:          make(chan commandSession),
-		id:                   uuid.New(),
 		phase:                bingo.GamePhaseInitialized,
 		currentRound:         0,
 		cardPlayerEntries:    nil,
@@ -277,8 +275,8 @@ func (g *Game) SubscribeToPhaseEvents(phase bingo.GamePhase) (<-chan bingo.GameE
 	return g.phaseSubscriptions.subscribeToPhaseEvents(phase)
 }
 
-// Command allows the Game to receive direct input from outside sources
-func (g *Game) Command(command bingo.GameCommand) error {
+// IssueCommand allows the Game to receive direct input from outside sources
+func (g *Game) IssueCommand(command bingo.GameCommand) error {
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
 
