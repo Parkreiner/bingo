@@ -200,31 +200,31 @@ type PlayerSuspension struct {
 type PhaseSubscriber interface {
 	// Subscribe lets any external system subscribe to events generated during
 	// specific game phases. If the provided slice is nil or empty, that causes
-	// the system to subscribe to ALL events.
+	// the system to subscribe to ALL events for ALL phases.
 	Subscribe(phases []GamePhase) (eventReceiver <-chan GameEvent, unsubscribe func(), err error)
 }
 
-// GameManager is a stateful representation of a bingo game. It is able to
-// receive direct user input, and also let external users subscribe to changes
-// in the game state
+// GameManager is a stateful representation of a game of American bingo.
 type GameManager interface {
 	PhaseSubscriber
 
 	// IssueCommand allows an entity (e.g., a system, a host, or a player) to
-	// make a command to update the game state. The GameManager implementation
+	// issue a command to update the game state. The GameManager implementation
 	// should make sure that the command is valid for that entity to make, and
 	// should handle all possible race conditions from multiple entities calling
 	// IssueCommand at the same time.
 	//
 	// IssueCommand is intended as a lower-level primitive for processing all
 	// the possible types of input that can be added to a game of bingo. It
-	// should *not* be connected directly to user input.
+	// should NOT be connected directly to user input.
 	//
-	// If the struct implementing the interface does not support a command, it
-	// should return ErrCommandNotSupported.
+	// If the concrete type implementing the interface does not support a
+	// command, it should return ErrCommandNotSupported.
 	IssueCommand(cmd GameCommand) error
+
 	// JoinGame allows a user to join a game and become a player. The resulting
-	// player struct will have the same ID provided as input. Should error out
-	// if a host tries to join a game they're currently hosting
+	// player struct will have the same ID provided as input. If the player is
+	// able to join successfully, they should have their Cards field already be
+	// pre-populated with bingo cards.
 	JoinGame(playerID uuid.UUID, playerName string) (player *Player, leaveGame func() error, err error)
 }
