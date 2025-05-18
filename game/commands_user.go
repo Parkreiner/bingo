@@ -3,16 +3,62 @@ package game
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/Parkreiner/bingo"
+	"github.com/google/uuid"
 )
 
 func (g *Game) processPlayerDaub(command bingo.GameCommand) error {
-	return setDaubValue(g, command, true)
+	err := setDaubValue(g, command, true)
+
+	var message string
+	var eventType bingo.GameEventType
+	if err != nil {
+		message = "daubed card"
+		eventType = bingo.EventTypeUpdate
+	} else {
+		message = "failed to daub card"
+		eventType = bingo.EventTypeError
+	}
+
+	g.phaseSubscriptions.dispatchEvent(bingo.GameEvent{
+		ID:                 uuid.New(),
+		Type:               eventType,
+		CreatedByID:        command.CommanderID,
+		Phase:              g.phase.value(),
+		Message:            message,
+		Created:            time.Now(),
+		RecipientPlayerIDs: []uuid.UUID{command.CommanderID},
+	})
+
+	return err
 }
 
 func (g *Game) processPlayerUndoDaub(command bingo.GameCommand) error {
-	return setDaubValue(g, command, false)
+	err := setDaubValue(g, command, false)
+
+	var message string
+	var eventType bingo.GameEventType
+	if err != nil {
+		message = "removed daub from card"
+		eventType = bingo.EventTypeUpdate
+	} else {
+		message = "failed to remove daub from card"
+		eventType = bingo.EventTypeError
+	}
+
+	g.phaseSubscriptions.dispatchEvent(bingo.GameEvent{
+		ID:                 uuid.New(),
+		Type:               eventType,
+		CreatedByID:        command.CommanderID,
+		Phase:              g.phase.value(),
+		Message:            message,
+		Created:            time.Now(),
+		RecipientPlayerIDs: []uuid.UUID{command.CommanderID},
+	})
+
+	return err
 }
 
 func setDaubValue(game *Game, command bingo.GameCommand, daubValue bool) error {

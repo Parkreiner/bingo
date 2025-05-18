@@ -20,11 +20,12 @@ const (
 // GameEvent represents something that has happened in the game (either the
 // result of an automatic game update, or a player action).
 type GameEvent struct {
-	ID      uuid.UUID     `json:"id"`
-	Phase   GamePhase     `json:"phase"`
-	Type    GameEventType `json:"event_type"`
-	Created time.Time     `json:"creation_timestamp"`
-	Message string        `json:"message"`
+	ID          uuid.UUID     `json:"id"`
+	CreatedByID uuid.UUID     `json:"createdById"`
+	Phase       GamePhase     `json:"phase"`
+	Type        GameEventType `json:"event_type"`
+	Created     time.Time     `json:"creation_timestamp"`
+	Message     string        `json:"message"`
 	// If the player ID slice is empty/nil, it's assumed that the event should
 	// be broadcast to all players
 	RecipientPlayerIDs []uuid.UUID `json:"recipient_player_ids"`
