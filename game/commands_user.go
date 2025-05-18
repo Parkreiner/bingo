@@ -62,6 +62,77 @@ func (g *Game) processPlayerUndoDaub(command bingo.GameCommand) error {
 	return err
 }
 
+func (g *Game) processHandReplacement(playerID uuid.UUID) error {
+	g.mtx.Lock()
+	defer g.mtx.Unlock()
+
+	if playerID == g.host.ID {
+		return errors.New("host is not allowed to have cards")
+	}
+	if playerID == g.systemID {
+		return errors.New("attempting to swap hand belonging to system")
+	}
+
+	var matchedPlayer *bingo.Player
+	for _, entry := range g.cardPlayers {
+		if entry.player.ID == playerID {
+			matchedPlayer = entry.player
+			break
+		}
+	}
+	if matchedPlayer == nil {
+		return fmt.Errorf("unable to find player with ID %q", playerID)
+	}
+
+	// Unfortunately there's not a great way to stop early in the event of an
+	// error, since the player will have already been created at this point, and
+	// errors for long-lived stateful values are nasty in general. The best we
+	// can do is try to do EVERYTHING needed to refresh the hand, gathering up
+	// all errors generated along the way
+	var errs []error
+	for _, card := range matchedPlayer.Cards {
+		err := g.cardRegistry.ReturnCard(card.ID)
+		if err != nil {
+			errs = append(errs, err)
+		}
+	}
+	for i := 0; i < bingo.MaxCards; i++ {
+		card, err := g.cardRegistry.CheckOutCard(playerID)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		matchedPlayer.Cards = append(matchedPlayer.Cards, card)
+	}
+
+	if len(errs) != 0 {
+		joined := fmt.Errorf("unable to refresh hand: %v", errors.Join(errs...))
+
+		g.phaseSubscriptions.dispatchEvent(bingo.GameEvent{
+			ID:           uuid.New(),
+			Type:         bingo.EventTypeError,
+			CreatedByID:  playerID,
+			Phase:        g.phase.value(),
+			Created:      time.Now(),
+			RecipientIDs: []uuid.UUID{playerID},
+			Message:      joined.Error(),
+		})
+		return joined
+	}
+
+	g.phaseSubscriptions.dispatchEvent(bingo.GameEvent{
+		ID:           uuid.New(),
+		Type:         bingo.EventTypeUpdate,
+		CreatedByID:  playerID,
+		Phase:        g.phase.value(),
+		Created:      time.Now(),
+		RecipientIDs: []uuid.UUID{playerID},
+		Message:      "hand refresh successful",
+	})
+
+	return nil
+}
+
 func setDaubValue(game *Game, command bingo.GameCommand, daubValue bool) error {
 	phase := game.phase.value()
 	if phase == bingo.GamePhaseRoundStart {

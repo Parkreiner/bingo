@@ -183,7 +183,7 @@ func (g *Game) routeCommand(command bingo.GameCommand) error {
 	case bingo.GameCommandPlayerRescindBingo:
 		return errTodo
 	case bingo.GameCommandPlayerReplaceCards:
-		return errTodo
+		return g.processHandReplacement(command.CommanderID)
 
 	default:
 		return fmt.Errorf("received unknown command %q", command.Type)
