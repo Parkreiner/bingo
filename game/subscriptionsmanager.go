@@ -39,7 +39,7 @@ func newSubscriptionsManager() subscriptionsManager {
 	}
 }
 
-func isMatch(subscription subscriptionEntry, event bingo.GameEvent) bool {
+func isEligibleForDispatch(subscription subscriptionEntry, event bingo.GameEvent) bool {
 	isPhaseFiltered := false
 	for _, p := range subscription.phases {
 		if p == event.Phase {
@@ -77,7 +77,7 @@ func (sm *subscriptionsManager) dispatchEvent(event bingo.GameEvent) error {
 
 	wg := sync.WaitGroup{}
 	for _, s := range subsCopy {
-		needToNotify := isMatch(s, event)
+		needToNotify := isEligibleForDispatch(s, event)
 		if !needToNotify {
 			continue
 		}
