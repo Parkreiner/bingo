@@ -37,14 +37,14 @@ const (
 	GameCommandHostSyncBall             GameCommandType = "host_sync_ball"
 	GameCommandHostAcknowledgeBingoCall GameCommandType = "host_acknowledge_bingo_call"
 	GameCommandHostStartTiebreakerRound GameCommandType = "host_start_tiebreaker_round"
-	// GameCommandHostAwardsPlayers indicates that the host acknowledges a
+	// GameCommandHostAwardPlayers indicates that the host acknowledges a
 	// successful bingo call from one or more players. It is allowed to be
 	// called at any time during the Confirming or Tiebreaker phases. For the
 	// Tiebreaker phase specifically, it can be used to handle a tiebreaker
 	// WITHOUT playing another round of bingo (i.e., making two players play
 	// rock paper scissors to decide the winner). If a host is feeling generous,
 	// they are allowed to award multiple players at once.
-	GameCommandHostAwardsPlayers GameCommandType = "host_awards_players"
+	GameCommandHostAwardPlayers GameCommandType = "host_award_players"
 )
 
 const (

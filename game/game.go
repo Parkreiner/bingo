@@ -153,15 +153,37 @@ func (g *Game) routeCommand(command bingo.GameCommand) error {
 	// Host commands
 	case bingo.GameCommandHostStartGame:
 		return g.processHostStartGame(command.CommanderID)
+	case bingo.GameCommandHostTerminateGame:
+		return errTodo
+	case bingo.GameCommandHostBanPlayer:
+		return errTodo
+	case bingo.GameCommandHostSuspendPlayer:
+		return errTodo
+	case bingo.GameCommandHostRequestBall:
+		return errTodo
+	case bingo.GameCommandHostSyncBall:
+		return errTodo
+	case bingo.GameCommandHostAcknowledgeBingoCall:
+		return errTodo
+	case bingo.GameCommandHostStartTiebreakerRound:
+		return errTodo
+	case bingo.GameCommandHostAwardPlayers:
+		return errTodo
 
 	// Player commands
 	case bingo.GameCommandPlayerDaub:
 		return g.processPlayerDaub(command)
 	case bingo.GameCommandPlayerUndoDaub:
 		return g.processPlayerUndoDaub(command)
+	case bingo.GameCommandPlayerCallBingo:
+		return errTodo
+	case bingo.GameCommandPlayerRescindBingo:
+		return errTodo
+	case bingo.GameCommandPlayerReplaceCards:
+		return errTodo
 
 	default:
-		return fmt.Errorf("command %q has type of unknown format", command.Type)
+		return fmt.Errorf("received unknown command %q", command.Type)
 	}
 }
 
@@ -222,41 +244,46 @@ func (g *Game) JoinGame(playerID uuid.UUID, playerName string) (*bingo.Player, f
 		EventReceiver: eventChan,
 	}
 
+	leftGame := false
 	newEntry := &playerEntry{
-		leaveGame: nil,
-		player:    player,
-	}
-	newEntry.leaveGame = func() error {
-		g.mtx.Lock()
-		defer g.mtx.Unlock()
-
-		var removedEntry *playerEntry
-		var filtered []*playerEntry
-		for _, e := range g.cardPlayerEntries {
-			if e.player.ID == playerID {
-				removedEntry = e
-			} else {
-				filtered = append(filtered, e)
+		player: player,
+		leaveGame: func() error {
+			if leftGame {
+				return nil
 			}
-		}
-		if len(filtered) == len(g.cardPlayerEntries) {
-			return nil
-		}
 
-		g.cardPlayerEntries = filtered
-		var cardReturnErr error
-		for _, card := range removedEntry.player.Cards {
-			// Don't stop at the first error found, because there's a chance
-			// that the other cards can still be returned/recycled for future
-			// rounds with other players
-			err := g.cardRegistry.ReturnCard(card.ID)
-			if err != nil {
-				cardReturnErr = err
+			g.mtx.Lock()
+			defer g.mtx.Unlock()
+
+			var removedEntry *playerEntry
+			var remainder []*playerEntry
+			for _, e := range g.cardPlayerEntries {
+				if e.player.ID == playerID {
+					removedEntry = e
+				} else {
+					remainder = append(remainder, e)
+				}
 			}
-		}
+			if len(remainder) == len(g.cardPlayerEntries) {
+				return nil
+			}
 
-		unsub()
-		return cardReturnErr
+			g.cardPlayerEntries = remainder
+			var cardReturnErr error
+			for _, card := range removedEntry.player.Cards {
+				// Don't stop at the first error found, because there's a chance
+				// that the other cards can still be returned/recycled for
+				// future rounds with other players
+				err := g.cardRegistry.ReturnCard(card.ID)
+				if err != nil {
+					cardReturnErr = err
+				}
+			}
+
+			unsub()
+			leftGame = true
+			return cardReturnErr
+		},
 	}
 
 	g.cardPlayerEntries = append(g.cardPlayerEntries, newEntry)
