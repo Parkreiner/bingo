@@ -110,5 +110,5 @@ type GameCommandPayloadPlayerDaub struct {
 
 type GameCommandPayloadPlayerUndoDaub struct {
 	CardID uuid.UUID `json:"cardId"`
-	Value  int       `json:"value"`
+	Cell   int       `json:"cell"`
 }
