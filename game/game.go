@@ -54,7 +54,7 @@ type Game struct {
 	winningPlayers     []*bingo.Player
 	suspensions        []*bingo.PlayerSuspension
 	bannedPlayerIDs    []uuid.UUID
-	phase              bingo.GamePhase
+	phase              phase
 	systemID           uuid.UUID
 	currentRound       int
 	maxRounds          int
@@ -98,7 +98,7 @@ func New(init Init) (*Game, error) {
 
 		// Unbuffered to have synchronization guarantees
 		commandChan:          make(chan commandSession),
-		phase:                bingo.GamePhaseInitialized,
+		phase:                newPhase(),
 		currentRound:         0,
 		cardPlayerEntries:    nil,
 		winningPlayers:       nil,
@@ -118,7 +118,7 @@ func New(init Init) (*Game, error) {
 	// the initialization
 	terminateCardRegistry, err := game.cardRegistry.Start()
 	if err != nil {
-		game.phase = bingo.GamePhaseInitializationFailure
+		game.phase.setValue(bingo.GamePhaseInitializationFailure)
 		return nil, fmt.Errorf("initializing game: %v", err)
 	}
 
@@ -192,7 +192,7 @@ func (g *Game) JoinGame(playerID uuid.UUID, playerName string) (*bingo.Player, f
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
 
-	if g.phase == bingo.GamePhaseGameOver {
+	if !g.phase.ok() {
 		return nil, nil, errors.New("cannot join game that has been terminated")
 	}
 	if playerID == g.host.ID {
@@ -233,7 +233,7 @@ func (g *Game) JoinGame(playerID uuid.UUID, playerName string) (*bingo.Player, f
 		cards = append(cards, card)
 	}
 	status := bingo.PlayerStatusWaitlisted
-	if g.phase == bingo.GamePhaseRoundStart {
+	if g.phase.getValue() == bingo.GamePhaseRoundStart {
 		status = bingo.PlayerStatusActive
 	}
 	player := &bingo.Player{
@@ -294,11 +294,8 @@ func (g *Game) JoinGame(playerID uuid.UUID, playerName string) (*bingo.Player, f
 // specific game phases. If the provided slice is nil or empty, that causes the
 // system to subscribe to ALL events for ALL game phases.
 func (g *Game) Subscribe(phases []bingo.GamePhase) (<-chan bingo.GameEvent, func(), error) {
-	g.mtx.Lock()
-	defer g.mtx.Unlock()
-
-	if g.phase == bingo.GamePhaseGameOver {
-		return nil, nil, errors.New("cannot subscribe to game that has been terminated")
+	if !g.phase.ok() {
+		return nil, nil, errors.New("game is not able to accept new subscriptions")
 	}
 
 	return g.phaseSubscriptions.subscribe(phases, nil)
@@ -306,12 +303,8 @@ func (g *Game) Subscribe(phases []bingo.GamePhase) (<-chan bingo.GameEvent, func
 
 // IssueCommand allows the Game to receive direct input from outside sources
 func (g *Game) IssueCommand(command bingo.GameCommand) error {
-	g.mtx.Lock()
-	defer g.mtx.Unlock()
-
-	if g.phase == bingo.GamePhaseGameOver ||
-		g.phase == bingo.GamePhaseInitializationFailure {
-		return errors.New("cannot send command while game is terminated")
+	if !g.phase.ok() {
+		return errors.New("game is unable to accept new commands")
 	}
 
 	channel := make(chan error)
