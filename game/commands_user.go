@@ -2,6 +2,7 @@ package game
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -22,14 +23,14 @@ func (g *Game) processPlayerDaub(command bingo.GameCommand) error {
 		eventType = bingo.EventTypeError
 	}
 
-	g.phaseSubscriptions.dispatchEvent(bingo.GameEvent{
-		ID:                 uuid.New(),
-		Type:               eventType,
-		CreatedByID:        command.CommanderID,
-		Phase:              g.phase.value(),
-		Message:            message,
-		Created:            time.Now(),
-		RecipientPlayerIDs: []uuid.UUID{command.CommanderID},
+	g.phaseSubscriptions.DispatchEvent(bingo.GameEvent{
+		ID:           uuid.New(),
+		Type:         eventType,
+		CreatedByID:  command.CommanderID,
+		Phase:        g.phase.value(),
+		Message:      message,
+		Created:      time.Now(),
+		RecipientIDs: []uuid.UUID{command.CommanderID},
 	})
 
 	return err
@@ -48,25 +49,33 @@ func (g *Game) processPlayerUndoDaub(command bingo.GameCommand) error {
 		eventType = bingo.EventTypeError
 	}
 
-	g.phaseSubscriptions.dispatchEvent(bingo.GameEvent{
-		ID:                 uuid.New(),
-		Type:               eventType,
-		CreatedByID:        command.CommanderID,
-		Phase:              g.phase.value(),
-		Message:            message,
-		Created:            time.Now(),
-		RecipientPlayerIDs: []uuid.UUID{command.CommanderID},
+	g.phaseSubscriptions.DispatchEvent(bingo.GameEvent{
+		ID:           uuid.New(),
+		Type:         eventType,
+		CreatedByID:  command.CommanderID,
+		Phase:        g.phase.value(),
+		Message:      message,
+		Created:      time.Now(),
+		RecipientIDs: []uuid.UUID{command.CommanderID},
 	})
 
 	return err
 }
 
 func setDaubValue(game *Game, command bingo.GameCommand, daubValue bool) error {
+	phase := game.phase.value()
+	if phase == bingo.GamePhaseRoundStart {
+		return errors.New("cannot change daubs when no cards have been called")
+	}
+	if phase == bingo.GamePhaseRoundEnd {
+		return errors.New("phase is ending; daub change discarded")
+	}
+
 	game.mtx.Lock()
 	defer game.mtx.Unlock()
 
 	var player *bingo.Player
-	for _, e := range game.cardPlayerEntries {
+	for _, e := range game.cardPlayers {
 		if e.player.ID == command.CommanderID {
 			player = e.player
 			break
@@ -103,7 +112,7 @@ func setDaubValue(game *Game, command bingo.GameCommand, daubValue bool) error {
 		cell.Daubed = daubValue
 		return nil
 	}
-	colIndex := (ball - 1) / bingo.Ball(bingo.MaxBallValue)
+	colIndex := (int(ball) - 1) / bingo.MaxBallValue
 	var cell *bingo.Cell
 	for i := 0; i < 5; i++ {
 		c := card.Cells[i][colIndex]

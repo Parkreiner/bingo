@@ -65,9 +65,9 @@ const (
 
 // cardRegistry defines an instance of a centralized bingo card registry. It
 // should not be copied once initialized. To start using a registry, call the
-// Start method. Once a registry has been terminated, it cannot be used to
-// generate any additional cards, and a new registry will need to be created
-// from scratch
+// Start method (which creates a callback for terminating the registry). Once a
+// registry has been terminated, it cannot be used to generate any additional
+// cards; a new registry will need to be created from scratch.
 type cardRegistry struct {
 	status            cardGenStatus
 	statusMtx         *sync.RWMutex

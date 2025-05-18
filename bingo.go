@@ -19,7 +19,7 @@ const (
 	MaxCards int = 6
 
 	// MaxBallValue is the highest bingo ball value that you can possibly have
-	// in an American game of bingo
+	// in an game of American bingo
 	MaxBallValue int = 75
 )
 

@@ -23,10 +23,10 @@ type GameEvent struct {
 	ID          uuid.UUID     `json:"id"`
 	CreatedByID uuid.UUID     `json:"createdById"`
 	Phase       GamePhase     `json:"phase"`
-	Type        GameEventType `json:"event_type"`
-	Created     time.Time     `json:"creation_timestamp"`
+	Type        GameEventType `json:"eventType"`
+	Created     time.Time     `json:"created"`
 	Message     string        `json:"message"`
 	// If the player ID slice is empty/nil, it's assumed that the event should
 	// be broadcast to all players
-	RecipientPlayerIDs []uuid.UUID `json:"recipient_player_ids"`
+	RecipientIDs []uuid.UUID `json:"recipientIds"`
 }

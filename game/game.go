@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/Parkreiner/bingo"
+	"github.com/Parkreiner/bingo/subscriptions"
 	"github.com/google/uuid"
 )
 
@@ -39,9 +40,9 @@ type Game struct {
 	cardRegistry cardRegistry
 	ballRegistry ballRegistry
 	host         *bingo.Player
-	// cardPlayerEntries represents all the players currently in the game (minus the
+	// cardPlayers represents all the players currently in the game (minus the
 	// host)
-	cardPlayerEntries []*playerEntry
+	cardPlayers []*playerEntry
 	// bingoCallerPlayerIDs refers to all players who are currently claiming to
 	// have bingo.
 	bingoCallerPlayerIDs []uuid.UUID
@@ -59,10 +60,10 @@ type Game struct {
 	currentRound       int
 	maxRounds          int
 	maxPlayers         int
-	dispose            func()
+	dispose            func() error
 	commandChan        chan commandSession
 	mtx                sync.Mutex
-	phaseSubscriptions subscriptionsManager
+	phaseSubscriptions subscriptions.Manager
 }
 
 var _ bingo.GameManager = &Game{}
@@ -94,13 +95,13 @@ func New(init Init) (*Game, error) {
 		maxPlayers:         defaultMaxPlayers,
 		ballRegistry:       *newBallRegistry(init.rngSeed),
 		cardRegistry:       *newCardRegistry(init.rngSeed),
-		phaseSubscriptions: newSubscriptionsManager(),
+		phaseSubscriptions: subscriptions.New(),
 
 		// Unbuffered to have synchronization guarantees
 		commandChan:          make(chan commandSession),
 		phase:                newPhase(),
 		currentRound:         0,
-		cardPlayerEntries:    nil,
+		cardPlayers:          nil,
 		winningPlayers:       nil,
 		bingoCallerPlayerIDs: nil,
 		suspensions:          nil,
@@ -119,17 +120,20 @@ func New(init Init) (*Game, error) {
 	terminateCardRegistry, err := game.cardRegistry.Start()
 	if err != nil {
 		game.phase.setValue(bingo.GamePhaseInitializationFailure)
-		return nil, fmt.Errorf("initializing game: %v", err)
+		return nil, fmt.Errorf("failed to initialize: %v", err)
 	}
 
 	disposed := false
-	game.dispose = func() {
+	game.dispose = func() error {
 		if disposed {
-			return
+			return nil
 		}
+
 		close(game.commandChan)
 		terminateCardRegistry()
+		err := game.phaseSubscriptions.Dispose(game.systemID)
 		disposed = true
+		return err
 	}
 
 	go func() {
@@ -152,7 +156,7 @@ func (g *Game) routeCommand(command bingo.GameCommand) error {
 
 	// Host commands
 	case bingo.GameCommandHostStartGame:
-		return g.processHostStartGame(command.CommanderID)
+		return errTodo
 	case bingo.GameCommandHostTerminateGame:
 		return errTodo
 	case bingo.GameCommandHostBanPlayer:
@@ -207,7 +211,7 @@ func (g *Game) JoinGame(playerID uuid.UUID, playerName string) (*bingo.Player, f
 
 	// Only make a new entry if it doesn't exist in the game at all
 	var prevEntry *playerEntry
-	for _, e := range g.cardPlayerEntries {
+	for _, e := range g.cardPlayers {
 		if e.player.ID == playerID {
 			prevEntry = e
 			break
@@ -217,7 +221,7 @@ func (g *Game) JoinGame(playerID uuid.UUID, playerName string) (*bingo.Player, f
 		return prevEntry.player, prevEntry.leaveGame, nil
 	}
 
-	eventChan, unsub, err := g.phaseSubscriptions.subscribe(nil, []uuid.UUID{
+	eventChan, unsub, err := g.phaseSubscriptions.Subscribe(nil, []uuid.UUID{
 		playerID,
 	})
 	if err != nil {
@@ -257,18 +261,18 @@ func (g *Game) JoinGame(playerID uuid.UUID, playerName string) (*bingo.Player, f
 
 			var removedEntry *playerEntry
 			var remainder []*playerEntry
-			for _, e := range g.cardPlayerEntries {
+			for _, e := range g.cardPlayers {
 				if e.player.ID == playerID {
 					removedEntry = e
 				} else {
 					remainder = append(remainder, e)
 				}
 			}
-			if len(remainder) == len(g.cardPlayerEntries) {
+			if len(remainder) == len(g.cardPlayers) {
 				return nil
 			}
 
-			g.cardPlayerEntries = remainder
+			g.cardPlayers = remainder
 			var cardReturnErr error
 			for _, card := range removedEntry.player.Cards {
 				// Don't stop at the first error found, because there's a chance
@@ -286,7 +290,7 @@ func (g *Game) JoinGame(playerID uuid.UUID, playerName string) (*bingo.Player, f
 		},
 	}
 
-	g.cardPlayerEntries = append(g.cardPlayerEntries, newEntry)
+	g.cardPlayers = append(g.cardPlayers, newEntry)
 	return newEntry.player, newEntry.leaveGame, nil
 }
 
@@ -298,7 +302,7 @@ func (g *Game) Subscribe(phases []bingo.GamePhase) (<-chan bingo.GameEvent, func
 		return nil, nil, errors.New("game is not able to accept new subscriptions")
 	}
 
-	return g.phaseSubscriptions.subscribe(phases, nil)
+	return g.phaseSubscriptions.Subscribe(phases, nil)
 }
 
 // IssueCommand allows the Game to receive direct input from outside sources
