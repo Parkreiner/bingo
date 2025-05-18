@@ -190,7 +190,13 @@ func (g *Game) routeCommand(command bingo.GameCommand) error {
 	}
 }
 
-// JoinGame allows a player to join a game as a normal player. Trying to
+// JoinGame allows a player to join a game as a normal player. The method will
+// prevent a player with the same ID from joining a game multiple times. If the
+// join attempt is successful, the returned player will be given a full hand of
+// bingo cards, ready to use.
+//
+// The returned callback lets a user leave the game. Calling the callback more
+// than once results in a no-op.
 func (g *Game) JoinGame(playerID uuid.UUID, playerName string) (*bingo.Player, func() error, error) {
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
@@ -220,9 +226,7 @@ func (g *Game) JoinGame(playerID uuid.UUID, playerName string) (*bingo.Player, f
 		return prevEntry.player, prevEntry.leaveGame, nil
 	}
 
-	eventChan, unsub, err := g.phaseSubscriptions.Subscribe(nil, []uuid.UUID{
-		playerID,
-	})
+	eventChan, unsub, err := g.phaseSubscriptions.subscribe(nil, []uuid.UUID{playerID})
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to join game: %v", err)
 	}
@@ -231,7 +235,8 @@ func (g *Game) JoinGame(playerID uuid.UUID, playerName string) (*bingo.Player, f
 	for i := 0; i < bingo.MaxCards; i++ {
 		card, err := g.cardRegistry.CheckOutCard(playerID)
 		if err != nil {
-			return nil, nil, fmt.Errorf("unable to produce card %d for %q (%s): %v", i+1, playerID, playerName, err)
+			unsub()
+			return nil, nil, fmt.Errorf("unable to produce card %d for player %q (ID %s): %v", i+1, playerName, playerID, err)
 		}
 		cards = append(cards, card)
 	}
@@ -301,13 +306,13 @@ func (g *Game) Subscribe(phases []bingo.GamePhase) (<-chan bingo.GameEvent, func
 		return nil, nil, errors.New("game is not able to accept new subscriptions")
 	}
 
-	return g.phaseSubscriptions.Subscribe(phases, nil)
+	return g.phaseSubscriptions.subscribe(phases, nil)
 }
 
 // IssueCommand allows the Game to receive direct input from outside sources
 func (g *Game) IssueCommand(command bingo.GameCommand) error {
 	if !g.phase.ok() {
-		return errors.New("game is unable to accept new commands")
+		return errors.New("game is not able to accept new commands")
 	}
 
 	channel := make(chan error)

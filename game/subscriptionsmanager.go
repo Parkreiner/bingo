@@ -22,7 +22,8 @@ type subscriptionEntry struct {
 }
 
 type subscriptionsManager struct {
-	subs []subscriptionEntry
+	subs              []subscriptionEntry
+	routineBufferSize int
 	// Should always be buffered with some size
 	routineBuffer chan struct{}
 	// Should always be unbuffered
@@ -37,10 +38,11 @@ func newSubscriptionsManager() subscriptionsManager {
 	}
 
 	return subscriptionsManager{
-		subs:          nil,
-		routineBuffer: buffer,
-		mtx:           &sync.Mutex{},
-		disposedChan:  make(chan struct{}),
+		subs:              nil,
+		routineBuffer:     buffer,
+		routineBufferSize: maxSubscriberGoroutines,
+		mtx:               &sync.Mutex{},
+		disposedChan:      make(chan struct{}),
 	}
 }
 
@@ -88,8 +90,9 @@ func (sm *subscriptionsManager) dispatchUnsafe(event bingo.GameEvent) error {
 	}
 	wg.Wait()
 
-	if successfulBroadcasts != maxBroadcasts {
-		return fmt.Errorf("dispatch failed for %d/%d subscribers", maxBroadcasts-successfulBroadcasts, maxBroadcasts)
+	unfulfilled := maxBroadcasts - successfulBroadcasts
+	if unfulfilled != 0 {
+		return fmt.Errorf("dispatch failed for %d/%d subscribers", unfulfilled, maxBroadcasts)
 	}
 	return nil
 }
@@ -106,7 +109,7 @@ func (sm *subscriptionsManager) dispatchEvent(event bingo.GameEvent) error {
 	return sm.dispatchUnsafe(event)
 }
 
-// Subscribe lets an external system subscribe to events emitted by a game.
+// subscribe lets an external system subscribe to events emitted by a game.
 // Subscriptions can be "narrowed"/filtered by specifying a slice of game phases
 // and a slice of recipients.
 //
@@ -120,8 +123,11 @@ func (sm *subscriptionsManager) dispatchEvent(event bingo.GameEvent) error {
 // The method returns a callback for manually unsubscribing. Note that:
 //  1. The callback is safe to call multiple times.
 //  2. The subscriptions manager can choose to unsubscribe a system even if that
-//     system has never called the callback.
-func (sm *subscriptionsManager) Subscribe(phases []bingo.GamePhase, recipientIDs []uuid.UUID) (<-chan bingo.GameEvent, func(), error) {
+//     system has never called the callback (mainly for teardown purposes).
+//
+// When the system has been unsubscribed (for any reason), the returned channel
+// will automatically be closed.
+func (sm *subscriptionsManager) subscribe(phases []bingo.GamePhase, recipientIDs []uuid.UUID) (<-chan bingo.GameEvent, func(), error) {
 	if sm.disposed() {
 		return nil, nil, errors.New("not accepting new subscriptions")
 	}
@@ -165,6 +171,9 @@ func (sm *subscriptionsManager) Subscribe(phases []bingo.GamePhase, recipientIDs
 	return eventChan, publicUnsub, nil
 }
 
+// dispose cleans up a subscriptionsManager and renders it inert for any further
+// event dispatches or subscription attempts. Calling it more than once results
+// in a no-op.
 func (sm *subscriptionsManager) dispose(systemID uuid.UUID) error {
 	if sm.disposed() {
 		return nil
@@ -189,7 +198,7 @@ func (sm *subscriptionsManager) dispose(systemID uuid.UUID) error {
 	routinesCleared := 0
 	for range sm.routineBuffer {
 		routinesCleared++
-		if routinesCleared == maxSubscriberGoroutines {
+		if routinesCleared == sm.routineBufferSize {
 			break
 		}
 	}
@@ -210,13 +219,13 @@ func isEligibleForDispatch(subscription subscriptionEntry, event bingo.GameEvent
 		return false
 	}
 
-	recipientMatch := false
+	matchesRecipients := len(event.RecipientIDs) == 0
 	for _, id := range event.RecipientIDs {
 		if slices.Contains(subscription.recipientIDs, id) {
-			recipientMatch = true
+			matchesRecipients = true
 			break
 		}
 	}
 
-	return recipientMatch
+	return matchesRecipients
 }
