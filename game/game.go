@@ -5,6 +5,7 @@ package game
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 
 	"github.com/Parkreiner/bingo"
@@ -22,11 +23,6 @@ const (
 // game, as well as any state necessary for that player to perform actions
 // (including leaving the game)
 type playerEntry struct {
-	// eventChan should always be the same event channel attached to the
-	// player field. The main difference is that this version allows two-way
-	// channel communication, while the player version enforces receive-only
-	// communication at the type level
-	eventChan chan bingo.GameEvent
 	leaveGame func() error
 	player    *bingo.Player
 }
@@ -37,7 +33,7 @@ type commandSession struct {
 }
 
 // Game is an implementation of the bingo.GameManager interface
-// Todo: Figure out how to split this struct up so that there's less contention
+// TODO: Figure out how to split this struct up so that there's less contention
 // for the mutex locks. That, or figure out a way to do EVERYTHING with channels
 type Game struct {
 	cardRegistry cardRegistry
@@ -175,13 +171,16 @@ func (g *Game) JoinGame(playerID uuid.UUID, playerName string) (*bingo.Player, f
 	defer g.mtx.Unlock()
 
 	if g.phase == bingo.GamePhaseGameOver {
-		return nil, nil, fmt.Errorf("cannot join game that has been terminated")
+		return nil, nil, errors.New("cannot join game that has been terminated")
 	}
 	if playerID == g.host.ID {
-		return nil, nil, fmt.Errorf("player cannot join game that they are hosting")
+		return nil, nil, errors.New("player cannot join game that they are hosting")
 	}
 	if playerID == g.systemID {
-		return nil, nil, fmt.Errorf("trying to add ID that belongs to system. Something is very wrong")
+		return nil, nil, errors.New("trying to add ID that belongs to system. Something is very wrong")
+	}
+	if slices.Contains(g.bannedPlayerIDs, playerID) {
+		return nil, nil, fmt.Errorf("player ID %q is banned", playerID)
 	}
 
 	// Only make a new entry if it doesn't exist in the game at all
@@ -196,6 +195,13 @@ func (g *Game) JoinGame(playerID uuid.UUID, playerName string) (*bingo.Player, f
 		return prevEntry.player, prevEntry.leaveGame, nil
 	}
 
+	eventChan, unsub, err := g.phaseSubscriptions.subscribe(nil, []uuid.UUID{
+		playerID,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("unable to join game: %v", err)
+	}
+
 	var cards []*bingo.Card
 	for i := 0; i < bingo.MaxCards; i++ {
 		card, err := g.cardRegistry.CheckOutCard(playerID)
@@ -204,24 +210,21 @@ func (g *Game) JoinGame(playerID uuid.UUID, playerName string) (*bingo.Player, f
 		}
 		cards = append(cards, card)
 	}
-
-	// Very important that the same eventChan be embedded in both the entry and
-	// the player inside the entry
-	eventChan := make(chan bingo.GameEvent)
 	status := bingo.PlayerStatusWaitlisted
 	if g.phase == bingo.GamePhaseRoundStart {
 		status = bingo.PlayerStatusActive
 	}
+	player := &bingo.Player{
+		Status:        status,
+		ID:            playerID,
+		Name:          playerName,
+		Cards:         cards,
+		EventReceiver: eventChan,
+	}
+
 	newEntry := &playerEntry{
-		eventChan: eventChan,
-		player: &bingo.Player{
-			Status:        status,
-			ID:            playerID,
-			Name:          playerName,
-			Cards:         cards,
-			EventReceiver: eventChan,
-		},
 		leaveGame: nil,
+		player:    player,
 	}
 	newEntry.leaveGame = func() error {
 		g.mtx.Lock()
@@ -252,7 +255,7 @@ func (g *Game) JoinGame(playerID uuid.UUID, playerName string) (*bingo.Player, f
 			}
 		}
 
-		close(newEntry.eventChan)
+		unsub()
 		return cardReturnErr
 	}
 
@@ -271,7 +274,7 @@ func (g *Game) Subscribe(phases []bingo.GamePhase) (<-chan bingo.GameEvent, func
 		return nil, nil, errors.New("cannot subscribe to game that has been terminated")
 	}
 
-	return g.phaseSubscriptions.subscribe(phases)
+	return g.phaseSubscriptions.subscribe(phases, nil)
 }
 
 // IssueCommand allows the Game to receive direct input from outside sources

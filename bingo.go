@@ -131,28 +131,27 @@ const (
 	GamePhaseGameOver GamePhase = "game_over"
 )
 
-// AllGamePhases is a slice of all game phases. It should be treated as a
-// readonly slice for the entire lifetime of the program.
-var AllGamePhases = []GamePhase{
-	GamePhaseInitialized,
-	GamePhaseInitializationFailure,
-	GamePhaseRoundStart,
-	GamePhaseCalling,
-	GamePhaseConfirmingBingo,
-	GamePhaseTiebreaker,
-	GamePhaseRoundEnd,
-	GamePhaseGameOver,
-}
-
 // PlayerStatus indicates the status of a player
 type PlayerStatus string
 
 const (
-	PlayerStatusHost       PlayerStatus = "host"
-	PlayerStatusActive     PlayerStatus = "active"
+	// PlayerStatusHost indicates that a given player is hosting the game. That
+	// player should have exclusive access to specific commands, and should
+	// never be treated as a participant who has cards.
+	PlayerStatusHost PlayerStatus = "host"
+	// PlayerStatusActive indicates that a player is actively playing the game.
+	PlayerStatusActive PlayerStatus = "active"
+	// PlayerStatusWaitlisted indicates that a player has joined a game, but is
+	// waiting for the next round to start.
 	PlayerStatusWaitlisted PlayerStatus = "waitlisted"
-	PlayerStatusSuspended  PlayerStatus = "suspended"
-	PlayerStatusBanned     PlayerStatus = "banned"
+	// PlayerStatusSuspended indicates that a player is part of a game, but has
+	// acted out, and is waiting to have a suspension elapse before being able
+	// to re-join the game.
+	PlayerStatusSuspended PlayerStatus = "suspended"
+	// PlayerStatusBanned indicates that a player has been banned. They should
+	// not ever be allowed to re-join a game. This status likely won't be used
+	// much in practice, but is included for completion's sake.
+	PlayerStatusBanned PlayerStatus = "banned"
 )
 
 // Player represents any user who is able to join a game, either as a host or a

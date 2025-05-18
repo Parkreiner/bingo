@@ -2,6 +2,7 @@ package game
 
 import (
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -12,9 +13,10 @@ import (
 const maxSubscriberGoroutines = 100
 
 type subscriptionEntry struct {
-	id        uuid.UUID
-	eventChan chan bingo.GameEvent
-	phases    []bingo.GamePhase
+	id           uuid.UUID
+	eventChan    chan bingo.GameEvent
+	phases       []bingo.GamePhase
+	recipientIDs []uuid.UUID
 }
 
 type subscriptionsManager struct {
@@ -37,6 +39,32 @@ func newSubscriptionsManager() subscriptionsManager {
 	}
 }
 
+func isMatch(subscription subscriptionEntry, event bingo.GameEvent) bool {
+	isPhaseFiltered := false
+	for _, p := range subscription.phases {
+		if p == event.Phase {
+			isPhaseFiltered = true
+			break
+		}
+	}
+	if isPhaseFiltered {
+		return true
+	}
+
+	recipientMatch := false
+	for _, id := range event.RecipientPlayerIDs {
+		if slices.Contains(subscription.recipientIDs, id) {
+			recipientMatch = true
+			break
+		}
+	}
+	if recipientMatch {
+		return true
+	}
+
+	return false
+}
+
 func (sm *subscriptionsManager) dispatchEvent(event bingo.GameEvent) error {
 	sm.mtx.Lock()
 	maxBroadcasts := len(sm.subs)
@@ -49,13 +77,7 @@ func (sm *subscriptionsManager) dispatchEvent(event bingo.GameEvent) error {
 
 	wg := sync.WaitGroup{}
 	for _, s := range subsCopy {
-		needToNotify := false
-		for _, p := range s.phases {
-			if p == event.Phase {
-				needToNotify = true
-				break
-			}
-		}
+		needToNotify := isMatch(s, event)
 		if !needToNotify {
 			continue
 		}
@@ -83,13 +105,18 @@ func (sm *subscriptionsManager) dispatchEvent(event bingo.GameEvent) error {
 	return nil
 }
 
-func (sm *subscriptionsManager) subscribe(phases []bingo.GamePhase) (<-chan bingo.GameEvent, func(), error) {
+func (sm *subscriptionsManager) subscribe(phases []bingo.GamePhase, recipientIDs []uuid.UUID) (<-chan bingo.GameEvent, func(), error) {
 	sm.mtx.Lock()
 	defer sm.mtx.Unlock()
 
 	subID := uuid.New()
 	eventChan := make(chan bingo.GameEvent, 1)
-	sm.subs = append(sm.subs, subscriptionEntry{subID, eventChan, phases})
+	sm.subs = append(sm.subs, subscriptionEntry{
+		id:           subID,
+		eventChan:    eventChan,
+		phases:       phases,
+		recipientIDs: recipientIDs,
+	})
 
 	subscribed := true
 	unsubscribe := func() {

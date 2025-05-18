@@ -8,9 +8,7 @@ import (
 )
 
 // GameCommandType indicates what type of command is trying to be input into a
-// ame. It can be used to know how what should be done in response to the
-// incoming input, as well as know how the payload for the command is
-// structured. The bingo package exports one custom struct for each command type
+// game.
 type GameCommandType = string
 
 // ErrCommandNotSupported is used to indicate that a struct that implements the
