@@ -23,7 +23,7 @@ func (g *Game) processPlayerDaub(command bingo.GameCommand) error {
 		eventType = bingo.EventTypeError
 	}
 
-	g.phaseSubscriptions.DispatchEvent(bingo.GameEvent{
+	g.phaseSubscriptions.dispatchEvent(bingo.GameEvent{
 		ID:           uuid.New(),
 		Type:         eventType,
 		CreatedByID:  command.CommanderID,
@@ -49,7 +49,7 @@ func (g *Game) processPlayerUndoDaub(command bingo.GameCommand) error {
 		eventType = bingo.EventTypeError
 	}
 
-	g.phaseSubscriptions.DispatchEvent(bingo.GameEvent{
+	g.phaseSubscriptions.dispatchEvent(bingo.GameEvent{
 		ID:           uuid.New(),
 		Type:         eventType,
 		CreatedByID:  command.CommanderID,

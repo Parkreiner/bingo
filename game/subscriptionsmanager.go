@@ -1,5 +1,4 @@
-// Package subscriptions makes it easy to manage subscriptions to game events.
-package subscriptions
+package game
 
 import (
 	"errors"
@@ -22,7 +21,7 @@ type subscriptionEntry struct {
 	unsubscribe    func()
 }
 
-type Manager struct {
+type subscriptionsManager struct {
 	subs []subscriptionEntry
 	// Should always be buffered with some size
 	routineBuffer chan struct{}
@@ -31,13 +30,13 @@ type Manager struct {
 	mtx          *sync.Mutex
 }
 
-func New() Manager {
+func newSubscriptionsManager() subscriptionsManager {
 	buffer := make(chan struct{}, maxSubscriberGoroutines)
 	for i := 0; i < maxSubscriberGoroutines; i++ {
 		buffer <- struct{}{}
 	}
 
-	return Manager{
+	return subscriptionsManager{
 		subs:          nil,
 		routineBuffer: buffer,
 		mtx:           &sync.Mutex{},
@@ -45,7 +44,7 @@ func New() Manager {
 	}
 }
 
-func (sm *Manager) disposed() bool {
+func (sm *subscriptionsManager) disposed() bool {
 	sm.mtx.Lock()
 	defer sm.mtx.Unlock()
 
@@ -59,14 +58,10 @@ func (sm *Manager) disposed() bool {
 	return disposed
 }
 
-func (sm *Manager) DispatchEvent(event bingo.GameEvent) error {
-	if sm.disposed() {
-		return errors.New("not accepting new event dispatches")
-	}
-
-	sm.mtx.Lock()
-	defer sm.mtx.Unlock()
-
+// dispatchUnsafe handles the core logic of dispatching events. It is NOT
+// thread-safe; it is the rest of the struct's responsibility to call the method
+// with any necessary thread protections.
+func (sm *subscriptionsManager) dispatchUnsafe(event bingo.GameEvent) error {
 	maxBroadcasts := len(sm.subs)
 	successfulBroadcasts := 0
 	wg := sync.WaitGroup{}
@@ -99,7 +94,34 @@ func (sm *Manager) DispatchEvent(event bingo.GameEvent) error {
 	return nil
 }
 
-func (sm *Manager) Subscribe(phases []bingo.GamePhase, recipientIDs []uuid.UUID) (<-chan bingo.GameEvent, func(), error) {
+// dispatchEvent notifies subscribers that an event has happened, using the
+// event's fields to determine which subscribers need to be notified.
+func (sm *subscriptionsManager) dispatchEvent(event bingo.GameEvent) error {
+	if sm.disposed() {
+		return errors.New("not accepting new event dispatches")
+	}
+
+	sm.mtx.Lock()
+	defer sm.mtx.Unlock()
+	return sm.dispatchUnsafe(event)
+}
+
+// Subscribe lets an external system subscribe to events emitted by a game.
+// Subscriptions can be "narrowed"/filtered by specifying a slice of game phases
+// and a slice of recipients.
+//
+//   - If the phases slice is nil/empty, every eligible recipient will be
+//     subscribed to ALL phases.
+//   - If the recipients slice is nil/empty, EVERY subscriber will be notified
+//     whenever an event is dispatched for a matching phase.
+//   - If both slices are nil/empty, ALL subscribers will be subscribed to ALL
+//     phases.
+//
+// The method returns a callback for manually unsubscribing. Note that:
+//  1. The callback is safe to call multiple times.
+//  2. The subscriptions manager can choose to unsubscribe a system even if that
+//     system has never called the callback.
+func (sm *subscriptionsManager) Subscribe(phases []bingo.GamePhase, recipientIDs []uuid.UUID) (<-chan bingo.GameEvent, func(), error) {
 	if sm.disposed() {
 		return nil, nil, errors.New("not accepting new subscriptions")
 	}
@@ -121,9 +143,6 @@ func (sm *Manager) Subscribe(phases []bingo.GamePhase, recipientIDs []uuid.UUID)
 				return
 			}
 
-			sm.mtx.Lock()
-			defer sm.mtx.Unlock()
-
 			var filtered []subscriptionEntry
 			for _, entry := range sm.subs {
 				if entry.id != subID {
@@ -136,17 +155,24 @@ func (sm *Manager) Subscribe(phases []bingo.GamePhase, recipientIDs []uuid.UUID)
 			subscribed = false
 		},
 	}
-
 	sm.subs = append(sm.subs, entry)
-	return eventChan, entry.unsubscribe, nil
+
+	publicUnsub := func() {
+		sm.mtx.Lock()
+		defer sm.mtx.Unlock()
+		entry.unsubscribe()
+	}
+	return eventChan, publicUnsub, nil
 }
 
-func (sm *Manager) Dispose(systemID uuid.UUID) error {
+func (sm *subscriptionsManager) dispose(systemID uuid.UUID) error {
 	if sm.disposed() {
 		return nil
 	}
 
-	err := sm.DispatchEvent(bingo.GameEvent{
+	sm.mtx.Lock()
+	defer sm.mtx.Unlock()
+	err := sm.dispatchUnsafe(bingo.GameEvent{
 		ID:           uuid.New(),
 		Type:         bingo.EventTypeUpdate,
 		Phase:        bingo.GamePhaseGameOver,
@@ -156,18 +182,7 @@ func (sm *Manager) Dispose(systemID uuid.UUID) error {
 		Message:      "Game has been terminated",
 	})
 
-	sm.mtx.Lock()
-	var subsCopy []subscriptionEntry
 	for _, s := range sm.subs {
-		subsCopy = append(subsCopy, s)
-	}
-	// Have to close disposedChan here, because otherwise, there's a risk that
-	// more subscribers will get added between locks/unlocks for the unsubscribe
-	// callbacks
-	close(sm.disposedChan)
-	sm.mtx.Unlock()
-
-	for _, s := range subsCopy {
 		s.unsubscribe()
 	}
 
@@ -179,6 +194,7 @@ func (sm *Manager) Dispose(systemID uuid.UUID) error {
 		}
 	}
 
+	close(sm.disposedChan)
 	return err
 }
 

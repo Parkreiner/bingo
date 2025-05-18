@@ -9,7 +9,6 @@ import (
 	"sync"
 
 	"github.com/Parkreiner/bingo"
-	"github.com/Parkreiner/bingo/subscriptions"
 	"github.com/google/uuid"
 )
 
@@ -63,7 +62,7 @@ type Game struct {
 	dispose            func() error
 	commandChan        chan commandSession
 	mtx                sync.Mutex
-	phaseSubscriptions subscriptions.Manager
+	phaseSubscriptions subscriptionsManager
 }
 
 var _ bingo.GameManager = &Game{}
@@ -95,7 +94,7 @@ func New(init Init) (*Game, error) {
 		maxPlayers:         defaultMaxPlayers,
 		ballRegistry:       *newBallRegistry(init.rngSeed),
 		cardRegistry:       *newCardRegistry(init.rngSeed),
-		phaseSubscriptions: subscriptions.New(),
+		phaseSubscriptions: newSubscriptionsManager(),
 
 		// Unbuffered to have synchronization guarantees
 		commandChan:          make(chan commandSession),
@@ -131,7 +130,7 @@ func New(init Init) (*Game, error) {
 
 		close(game.commandChan)
 		terminateCardRegistry()
-		err := game.phaseSubscriptions.Dispose(game.systemID)
+		err := game.phaseSubscriptions.dispose(game.systemID)
 		disposed = true
 		return err
 	}
