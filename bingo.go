@@ -1,4 +1,5 @@
-// Package bingo contains the main domain logic for playing a bingo game.
+// Package bingo contains the main domain types (and associated helper values
+// and functions) needed to play a game of American bingo.
 package bingo
 
 import (
@@ -29,7 +30,7 @@ type Ball byte
 
 // FreeSpace represents the space given for free to all players. It is the zero
 // value of Ball. It should not be daubed automatically on a bingo card, just so
-// that players have more to do in a round
+// that players have more opportunities to stay engaged with the game UI
 const FreeSpace = Ball(0)
 
 var _ json.Marshaler = FreeSpace
