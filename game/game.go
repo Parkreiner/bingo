@@ -233,7 +233,7 @@ func (g *Game) JoinGame(playerID uuid.UUID, playerName string) (*bingo.Player, f
 		cards = append(cards, card)
 	}
 	status := bingo.PlayerStatusWaitlisted
-	if g.phase.getValue() == bingo.GamePhaseRoundStart {
+	if g.phase.value() == bingo.GamePhaseRoundStart {
 		status = bingo.PlayerStatusActive
 	}
 	player := &bingo.Player{

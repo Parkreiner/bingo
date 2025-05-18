@@ -33,56 +33,55 @@ func newBallRegistry(rngSeed int64) *ballRegistry {
 
 // NextAutomaticCall has the registry produce the next value for a game of
 // bingo. Helpful if you don't have any in-person bingo ball machines.
-func (a *ballRegistry) NextAutomaticCall() (bingo.Ball, error) {
-	a.mtx.Lock()
-	defer a.mtx.Unlock()
+func (br *ballRegistry) NextAutomaticCall() (bingo.Ball, error) {
+	br.mtx.Lock()
+	defer br.mtx.Unlock()
 
-	if len(a.uncalled) == 0 {
+	if len(br.uncalled) == 0 {
 		return bingo.FreeSpace, errors.New("registry has no more bingo balls")
 	}
 
-	l := len(a.uncalled) - 1
-	next := a.uncalled[l]
-	a.uncalled = a.uncalled[0:l]
+	l := len(br.uncalled) - 1
+	next := br.uncalled[l]
+	br.uncalled = br.uncalled[0:l]
 	return next, nil
 }
 
 // SyncManualCall tells the registry which bingo ball was just called from an
 // in-person bingo machine.
-func (a *ballRegistry) SyncManualCall(ball bingo.Ball) error {
-	a.mtx.Lock()
-	defer a.mtx.Unlock()
+func (br *ballRegistry) SyncManualCall(ball bingo.Ball) error {
+	br.mtx.Lock()
+	defer br.mtx.Unlock()
 
 	foundIndex := -1
-	for i, b := range a.uncalled {
+	for i, b := range br.uncalled {
 		if b == ball {
 			foundIndex = i
 			break
 		}
 	}
-
 	if foundIndex == -1 {
 		return fmt.Errorf("could not find bingo ball %d in list of uncalled bingo balls", ball)
 	}
 
-	a.called = append(a.called, a.uncalled[foundIndex])
-	end := len(a.uncalled) - 1
+	br.called = append(br.called, br.uncalled[foundIndex])
+	end := len(br.uncalled) - 1
 	for i := foundIndex; i < end; i++ {
-		a.uncalled[i] = a.uncalled[i+1]
+		br.uncalled[i] = br.uncalled[i+1]
 	}
-	a.uncalled = a.uncalled[0:end]
+	br.uncalled = br.uncalled[0:end]
 
 	return nil
 }
 
 // Reset reverts the state of the bingo ball registry to its initial state.
 // Should be called at the start of each round of bingo.
-func (a *ballRegistry) Reset() {
-	a.mtx.Lock()
-	defer a.mtx.Unlock()
+func (br *ballRegistry) Reset() {
+	br.mtx.Lock()
+	defer br.mtx.Unlock()
 
 	newUncalled := generateBingoBallsForRange(1, 75)
-	a.shuffler.shuffleBalls(newUncalled)
-	a.uncalled = newUncalled
-	a.called = nil
+	br.shuffler.shuffleBalls(newUncalled)
+	br.uncalled = newUncalled
+	br.called = nil
 }

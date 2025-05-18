@@ -8,7 +8,7 @@ import (
 )
 
 type phase struct {
-	_p bingo.GamePhase
+	_value bingo.GamePhase
 	// It's expected that the phase will be read from FAR more often than it
 	// will be written to, so a regular mutex doesn't make sense
 	rwmtx *sync.RWMutex
@@ -16,36 +16,36 @@ type phase struct {
 
 func newPhase() phase {
 	return phase{
-		_p:    bingo.GamePhaseInitialized,
-		rwmtx: &sync.RWMutex{},
+		_value: bingo.GamePhaseInitialized,
+		rwmtx:  &sync.RWMutex{},
 	}
 }
 
-func (p *phase) getValue() bingo.GamePhase {
+func (p *phase) value() bingo.GamePhase {
 	p.rwmtx.RLock()
 	defer p.rwmtx.RUnlock()
-	return p._p
+	return p._value
 }
 
 // ok provides a convenience check for whether a game is "generically okay". As
-// in, it's generally able to accept new subscriptions and commands, but it's
-// possible for there to be other errors within the game state.
+// in, it's generally able to accept new subscriptions and commands, but the
+// system cannot guarantee whether those subscriptions/commands will succeed.
 func (p *phase) ok() bool {
-	value := p.getValue()
-	return value != bingo.GamePhaseGameOver && value != bingo.GamePhaseInitializationFailure
+	v := p.value()
+	return v != bingo.GamePhaseGameOver && v != bingo.GamePhaseInitializationFailure
 }
 
 func (p *phase) setValue(newValue bingo.GamePhase) error {
 	p.rwmtx.Lock()
 	defer p.rwmtx.Unlock()
 
-	switch p._p {
+	switch p._value {
 	case bingo.GamePhaseGameOver:
 		return errors.New("game is over")
 	case bingo.GamePhaseInitializationFailure:
 		return errors.New("game failed to initialize")
 	default:
-		p._p = newValue
+		p._value = newValue
 		return nil
 	}
 }
