@@ -48,65 +48,10 @@ func New(init Init) (*EventFileLogger, error) {
 		return nil, fmt.Errorf("filepath %q does not exist: %v", init.OutputPath, err)
 	}
 
-	// Set up subscriptions for each phase type (making sure to close any
-	// subscriptions if any fail). As annoying as setting this all up manually
-	// is, trying to stitch everything together with reflection will tank
-	// performance a lot
-	var unsubCallbacks []func()
-	unsubToAll := func() {
-		for _, unsub := range unsubCallbacks {
-			unsub()
-		}
-	}
-
-	initChan, initUnsub, err := init.Subscriber.SubscribeToPhaseEvents(bingo.GamePhaseInitialized)
+	allEventsChan, unsub, err := init.Subscriber.Subscribe(nil)
 	if err != nil {
-		unsubToAll()
-		return nil, fmt.Errorf("unable to subscribe to events for phase %s", bingo.GamePhaseInitialized)
+		return nil, fmt.Errorf("unable to subscribe to all events: %v", err)
 	}
-	unsubCallbacks = append(unsubCallbacks, initUnsub)
-
-	roundStartChan, roundStartUnsub, err := init.Subscriber.SubscribeToPhaseEvents(bingo.GamePhaseRoundStart)
-	if err != nil {
-		unsubToAll()
-		return nil, fmt.Errorf("unable to subscribe to events for phase %s", bingo.GamePhaseRoundStart)
-	}
-	unsubCallbacks = append(unsubCallbacks, roundStartUnsub)
-
-	callingChan, callingUnsub, err := init.Subscriber.SubscribeToPhaseEvents(bingo.GamePhaseCalling)
-	if err != nil {
-		unsubToAll()
-		return nil, fmt.Errorf("unable to subscribe to events for phase %s", bingo.GamePhaseCalling)
-	}
-	unsubCallbacks = append(unsubCallbacks, callingUnsub)
-
-	confirmingChan, confirmingUnsub, err := init.Subscriber.SubscribeToPhaseEvents(bingo.GamePhaseConfirmingBingo)
-	if err != nil {
-		unsubToAll()
-		return nil, fmt.Errorf("unable to subscribe to events for phase %s", bingo.GamePhaseConfirmingBingo)
-	}
-	unsubCallbacks = append(unsubCallbacks, confirmingUnsub)
-
-	tiebreakerChan, tiebreakerUnsub, err := init.Subscriber.SubscribeToPhaseEvents(bingo.GamePhaseTiebreaker)
-	if err != nil {
-		unsubToAll()
-		return nil, fmt.Errorf("unable to subscribe to events for phase %s", bingo.GamePhaseTiebreaker)
-	}
-	unsubCallbacks = append(unsubCallbacks, tiebreakerUnsub)
-
-	roundEndChan, roundEndUnsub, err := init.Subscriber.SubscribeToPhaseEvents(bingo.GamePhaseRoundEnd)
-	if err != nil {
-		unsubToAll()
-		return nil, fmt.Errorf("unable to subscribe to events for phase %s", bingo.GamePhaseRoundEnd)
-	}
-	unsubCallbacks = append(unsubCallbacks, roundEndUnsub)
-
-	gameOverChan, gameOverUnsub, err := init.Subscriber.SubscribeToPhaseEvents(bingo.GamePhaseGameOver)
-	if err != nil {
-		unsubToAll()
-		return nil, fmt.Errorf("unable to subscribe to events for phase %s", bingo.GamePhaseGameOver)
-	}
-	unsubCallbacks = append(unsubCallbacks, gameOverUnsub)
 
 	loggerChan := make(chan loggerRequest)
 	disposedChan := make(chan struct{})
@@ -117,11 +62,10 @@ func New(init Init) (*EventFileLogger, error) {
 	}
 
 	go func() {
-		defer unsubToAll()
+		defer unsub()
 		done := false
 
 		for {
-			var event *bingo.GameEvent
 			select {
 			case req, closed := <-loggerChan:
 				if closed {
@@ -133,49 +77,17 @@ func New(init Init) (*EventFileLogger, error) {
 					bytesWritten: b,
 					err:          err,
 				}
-
-			case e, closed := <-initChan:
+			case event, closed := <-allEventsChan:
 				if closed {
+					done = true
 					break
 				}
-				event = &e
-			case e, closed := <-roundStartChan:
-				if closed {
-					break
-				}
-				event = &e
-			case e, closed := <-callingChan:
-				if closed {
-					break
-				}
-				event = &e
-			case e, closed := <-confirmingChan:
-				if closed {
-					break
-				}
-				event = &e
-			case e, closed := <-tiebreakerChan:
-				if closed {
-					break
-				}
-				event = &e
-			case e, closed := <-roundEndChan:
-				if closed {
-					break
-				}
-				event = &e
-			case e, closed := <-gameOverChan:
-				if closed {
-					break
-				}
-				event = &e
+				logLine := fmt.Sprintf("[phase %s] [type %s] [id %s] %s", event.Phase, event.Type, event.ID, event.Message)
+				_, _ = logger.file.Write([]byte(logLine))
 			}
 
 			if done {
 				break
-			}
-			if event != nil {
-				logger.writeEventToFile(*event)
 			}
 		}
 
@@ -183,15 +95,6 @@ func New(init Init) (*EventFileLogger, error) {
 	}()
 
 	return logger, nil
-}
-
-func (efl *EventFileLogger) writeEventToFile(event bingo.GameEvent) error {
-	logLine := fmt.Sprintf("[phase %s] [type %s] [id %s] %s", event.Phase, event.Type, event.ID, event.Message)
-	_, err := efl.file.Write([]byte(logLine))
-	if err != nil {
-		return fmt.Errorf("unable to write log %q: %v", logLine, err)
-	}
-	return nil
 }
 
 func (efl *EventFileLogger) Write(content []byte) (int, error) {

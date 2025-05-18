@@ -260,11 +260,10 @@ func (g *Game) JoinGame(playerID uuid.UUID, playerName string) (*bingo.Player, f
 	return newEntry.player, newEntry.leaveGame, nil
 }
 
-// SubscribeToPhaseEvents lets an external system subscribe to all events
-// emitted during a given phase. There is no filtering beyond that – if the game
-// is in the phase that was subscribed to, ALL events for all users will be
-// emitted
-func (g *Game) SubscribeToPhaseEvents(phase bingo.GamePhase) (<-chan bingo.GameEvent, func(), error) {
+// Subscribe lets an external system subscribe to all events emitted during
+// specific game phases. If the provided slice is nil or empty, that causes the
+// system to subscribe to ALL events for ALL game phases.
+func (g *Game) Subscribe(phases []bingo.GamePhase) (<-chan bingo.GameEvent, func(), error) {
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
 
@@ -272,7 +271,7 @@ func (g *Game) SubscribeToPhaseEvents(phase bingo.GamePhase) (<-chan bingo.GameE
 		return nil, nil, errors.New("cannot subscribe to game that has been terminated")
 	}
 
-	return g.phaseSubscriptions.subscribeToPhaseEvents(phase)
+	return g.phaseSubscriptions.subscribe(phases)
 }
 
 // IssueCommand allows the Game to receive direct input from outside sources

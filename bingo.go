@@ -198,9 +198,10 @@ type PlayerSuspension struct {
 // PhaseSubscriber is anything that lets a system listen to all events that can
 // be dispatched for each possible bingo game phase.
 type PhaseSubscriber interface {
-	// SubscribeToPhaseEvents allows an external system to subscribe to all
-	// events for a given phase type
-	SubscribeToPhaseEvents(phase GamePhase) (eventReceiver <-chan GameEvent, unsubscribe func(), err error)
+	// Subscribe lets any external system subscribe to events generated during
+	// specific game phases. If the provided slice is nil or empty, that causes
+	// the system to subscribe to ALL events.
+	Subscribe(phases []GamePhase) (eventReceiver <-chan GameEvent, unsubscribe func(), err error)
 }
 
 // GameManager is a stateful representation of a bingo game. It is able to
