@@ -2,6 +2,7 @@ package bingo
 
 import (
 	"encoding/json"
+	"errors"
 
 	"github.com/google/uuid"
 )
@@ -11,6 +12,10 @@ import (
 // incoming input, as well as know how the payload for the command is
 // structured. The bingo package exports one custom struct for each command type
 type GameCommandType = string
+
+// ErrCommandNotSupported is used to indicate that a struct that implements the
+// GameManager interface does NOT support a specific command.
+var ErrCommandNotSupported = errors.New("command is not supported")
 
 const (
 	// GameCommandSystemBroadcastState instructs a game to broadcast the current

@@ -219,6 +219,9 @@ type GameManager interface {
 	// IssueCommand is intended as a lower-level primitive for processing all
 	// the possible types of input that can be added to a game of bingo. It
 	// should *not* be connected directly to user input.
+	//
+	// If the struct implementing the interface does not support a command, it
+	// should return ErrCommandNotSupported.
 	IssueCommand(cmd GameCommand) error
 	// JoinGame allows a user to join a game and become a player. The resulting
 	// player struct will have the same ID provided as input. Should error out
