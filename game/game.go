@@ -329,3 +329,14 @@ func (g *Game) IssueCommand(command bingo.GameCommand) error {
 	err := <-channel
 	return err
 }
+
+// Snapshot produces an immutable snapshot of the entire public game state.
+func (g *Game) Snapshot() bingo.GameSnapshot {
+	g.mtx.Lock()
+	defer g.mtx.Unlock()
+
+	return bingo.GameSnapshot{
+		Phase:  g.phase.value(),
+		Called: g.ballRegistry.getCalledBalls(),
+	}
+}

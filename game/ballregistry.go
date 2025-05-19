@@ -31,9 +31,20 @@ func newBallRegistry(rngSeed int64) *ballRegistry {
 	}
 }
 
-// NextAutomaticCall has the registry produce the next value for a game of
+func (br *ballRegistry) getCalledBalls() []bingo.Ball {
+	br.mtx.Lock()
+	defer br.mtx.Unlock()
+
+	var calledCopy []bingo.Ball
+	for _, b := range br.called {
+		calledCopy = append(calledCopy, b)
+	}
+	return calledCopy
+}
+
+// nextAutomaticCall has the registry produce the next value for a game of
 // bingo. Helpful if you don't have any in-person bingo ball machines.
-func (br *ballRegistry) NextAutomaticCall() (bingo.Ball, error) {
+func (br *ballRegistry) nextAutomaticCall() (bingo.Ball, error) {
 	br.mtx.Lock()
 	defer br.mtx.Unlock()
 
@@ -49,9 +60,9 @@ func (br *ballRegistry) NextAutomaticCall() (bingo.Ball, error) {
 	return next, nil
 }
 
-// SyncManualCall tells the registry which bingo ball was just called from an
+// syncManualCall tells the registry which bingo ball was just called from an
 // in-person bingo machine.
-func (br *ballRegistry) SyncManualCall(ball bingo.Ball) error {
+func (br *ballRegistry) syncManualCall(ball bingo.Ball) error {
 	br.mtx.Lock()
 	defer br.mtx.Unlock()
 
@@ -76,9 +87,9 @@ func (br *ballRegistry) SyncManualCall(ball bingo.Ball) error {
 	return nil
 }
 
-// Reset reverts the state of the bingo ball registry to its initial state.
+// reset reverts the state of the bingo ball registry to its initial state.
 // Should be called at the start of each round of bingo.
-func (br *ballRegistry) Reset() {
+func (br *ballRegistry) reset() {
 	br.mtx.Lock()
 	defer br.mtx.Unlock()
 

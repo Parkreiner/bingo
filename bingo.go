@@ -227,4 +227,9 @@ type GameManager interface {
 	// able to join successfully, they should have their Cards field already be
 	// pre-populated with bingo cards.
 	JoinGame(playerID uuid.UUID, playerName string) (player *Player, leaveGame func() error, err error)
+
+	// Snapshot produces an immutable snapshot of the entire "public" game
+	// state. The resulting value should be fully JSON-serializable out of the
+	// box.
+	Snapshot() GameSnapshot
 }

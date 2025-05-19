@@ -19,7 +19,7 @@ func (g *Game) processAutomaticBall(commanderID uuid.UUID) error {
 		return errors.New("can only issue a new ball during the calling phase")
 	}
 
-	ball, err := g.ballRegistry.NextAutomaticCall()
+	ball, err := g.ballRegistry.nextAutomaticCall()
 	if err != nil {
 		g.phaseSubscriptions.dispatchEvent(bingo.GameEvent{
 			Phase:        bingo.GamePhaseCalling,
