@@ -50,14 +50,13 @@ func (sm *subscriptionsManager) disposed() bool {
 	sm.mtx.Lock()
 	defer sm.mtx.Unlock()
 
-	disposed := false
 	select {
 	case _, closed := <-sm.disposedChan:
-		disposed = closed
+		return closed
 	default:
 	}
 
-	return disposed
+	return false
 }
 
 // dispatchUnsafe handles the core logic of dispatching events. It is NOT
@@ -99,14 +98,39 @@ func (sm *subscriptionsManager) dispatchUnsafe(event bingo.GameEvent) error {
 
 // dispatchEvent notifies subscribers that an event has happened, using the
 // event's fields to determine which subscribers need to be notified.
+//
+// It is safe to call this method without fully filling out an event. The
+// following fields will be backfilled with data if they are a zero value:
+// 1. Created - Backfilled with current time
+// 2. ID - Backfilled with fresh UUID
+//
+// All other fields are assumed to be filled out with the correct data (which
+// also means that the RecipientIDs field should only be nil if an event should
+// be broadcast to all subscribers)
 func (sm *subscriptionsManager) dispatchEvent(event bingo.GameEvent) error {
 	if sm.disposed() {
 		return errors.New("not accepting new event dispatches")
 	}
 
+	eventToDispatch := bingo.GameEvent{
+		Created:      event.Created,
+		ID:           event.ID,
+		CreatedByID:  event.CreatedByID,
+		Phase:        event.Phase,
+		Message:      event.Message,
+		Type:         event.Type,
+		RecipientIDs: event.RecipientIDs,
+	}
+	if eventToDispatch.Created.IsZero() {
+		eventToDispatch.Created = time.Now()
+	}
+	if eventToDispatch.ID == uuid.Nil {
+		eventToDispatch.ID = uuid.New()
+	}
+
 	sm.mtx.Lock()
 	defer sm.mtx.Unlock()
-	return sm.dispatchUnsafe(event)
+	return sm.dispatchUnsafe(eventToDispatch)
 }
 
 // subscribe lets an external system subscribe to events emitted by a game.
@@ -144,6 +168,11 @@ func (sm *subscriptionsManager) subscribe(phases []bingo.GamePhase, recipientIDs
 		eventChan:      eventChan,
 		filteredPhases: phases,
 		recipientIDs:   recipientIDs,
+
+		// Need to define the core unsubscribe logic in a non-thread-safe way,
+		// so that there's no deadlocking when trying to unsubscribe everything
+		// as part of the dispose method. Just make sure to wrap thread-safety
+		// around it before calling
 		unsubscribe: func() {
 			if !subscribed {
 				return
@@ -163,12 +192,12 @@ func (sm *subscriptionsManager) subscribe(phases []bingo.GamePhase, recipientIDs
 	}
 	sm.subs = append(sm.subs, entry)
 
-	publicUnsub := func() {
+	safeUnsub := func() {
 		sm.mtx.Lock()
 		defer sm.mtx.Unlock()
 		entry.unsubscribe()
 	}
-	return eventChan, publicUnsub, nil
+	return eventChan, safeUnsub, nil
 }
 
 // dispose cleans up a subscriptionsManager and renders it inert for any further
@@ -203,6 +232,9 @@ func (sm *subscriptionsManager) dispose(systemID uuid.UUID) error {
 		}
 	}
 
+	// Considered also closing routineBuffer, but as long as all the methods
+	// check disposedChan to see if they can do work, it should be safe to just
+	// let that be garbage-collected
 	close(sm.disposedChan)
 	return err
 }
