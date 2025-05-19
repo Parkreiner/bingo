@@ -24,12 +24,10 @@ func (g *Game) processPlayerDaub(command bingo.GameCommand) error {
 	}
 
 	g.phaseSubscriptions.dispatchEvent(bingo.GameEvent{
-		ID:           uuid.New(),
 		Type:         eventType,
 		CreatedByID:  command.CommanderID,
 		Phase:        g.phase.value(),
 		Message:      message,
-		Created:      time.Now(),
 		RecipientIDs: []uuid.UUID{command.CommanderID},
 	})
 
@@ -50,12 +48,10 @@ func (g *Game) processPlayerUndoDaub(command bingo.GameCommand) error {
 	}
 
 	g.phaseSubscriptions.dispatchEvent(bingo.GameEvent{
-		ID:           uuid.New(),
 		Type:         eventType,
 		CreatedByID:  command.CommanderID,
 		Phase:        g.phase.value(),
 		Message:      message,
-		Created:      time.Now(),
 		RecipientIDs: []uuid.UUID{command.CommanderID},
 	})
 

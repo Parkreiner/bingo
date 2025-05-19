@@ -146,6 +146,10 @@ func New(init Init) (*Game, error) {
 }
 
 func (g *Game) routeCommand(command bingo.GameCommand) error {
+	if !g.phase.ok() {
+		return errors.New("cannot route command for terminated game")
+	}
+
 	switch command.Type {
 	// System commands
 	case bingo.GameCommandSystemDispose:
@@ -163,7 +167,7 @@ func (g *Game) routeCommand(command bingo.GameCommand) error {
 	case bingo.GameCommandHostSuspendPlayer:
 		return errTodo
 	case bingo.GameCommandHostRequestBall:
-		return errTodo
+		return g.processAutomaticBall(command.CommanderID)
 	case bingo.GameCommandHostSyncBall:
 		return errTodo
 	case bingo.GameCommandHostAcknowledgeBingoCall:

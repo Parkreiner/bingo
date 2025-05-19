@@ -44,6 +44,8 @@ func (br *ballRegistry) NextAutomaticCall() (bingo.Ball, error) {
 	l := len(br.uncalled) - 1
 	next := br.uncalled[l]
 	br.uncalled = br.uncalled[0:l]
+	br.called = append(br.called, next)
+
 	return next, nil
 }
 
