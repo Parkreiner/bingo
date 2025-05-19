@@ -1,6 +1,6 @@
-// Package eventfilelogger provides an easy way to write logs describing game
+// Package eventlogger provides an easy way to write logs describing game
 // events to a specific file.
-package eventfilelogger
+package eventlogger
 
 import (
 	"errors"
@@ -34,14 +34,14 @@ type EventLogger struct {
 
 var _ io.WriteCloser = &EventLogger{}
 
-// Init is used to instantiate an EventFileLogger via the New function.
+// Init is used to instantiate an EventLogger via the New function.
 type Init struct {
 	Subscriber bingo.PhaseSubscriber
 	OutputPath string
 }
 
-// New instantiaes an EventFileLogger and automatically subscribes it to all
-// events dispatched for every possible game event.
+// New instantiates an EventLogger and automatically subscribes it to all events
+// dispatched for every possible game phase.
 func New(init Init) (*EventLogger, error) {
 	file, err := os.Open(init.OutputPath)
 	if err != nil {
@@ -97,9 +97,9 @@ func New(init Init) (*EventLogger, error) {
 	return logger, nil
 }
 
-func (efl *EventLogger) Write(content []byte) (int, error) {
+func (el *EventLogger) Write(content []byte) (int, error) {
 	select {
-	case _, closed := <-efl.disposedChan:
+	case _, closed := <-el.disposedChan:
 		if closed {
 			return 0, errors.New("logger is closed")
 		}
@@ -107,7 +107,7 @@ func (efl *EventLogger) Write(content []byte) (int, error) {
 	}
 
 	resultChan := make(chan logWriteResult)
-	efl.loggerChan <- loggerRequest{
+	el.loggerChan <- loggerRequest{
 		content:    content,
 		resultChan: resultChan,
 	}
@@ -116,19 +116,19 @@ func (efl *EventLogger) Write(content []byte) (int, error) {
 	return result.bytesWritten, result.err
 }
 
-// Close terminates an EventFileLogger, rendering it so that it can no longer
+// Close terminates an EventLogger, rendering it so that it can no longer
 // receive logs. It will also close all open subscriptions. This function is
 // safe to call multiple times; calling it more than once results in a no-op.
-func (efl *EventLogger) Close() error {
+func (el *EventLogger) Close() error {
 	select {
-	case _, closed := <-efl.disposedChan:
+	case _, closed := <-el.disposedChan:
 		if closed {
 			return nil
 		}
 	default:
 	}
 
-	close(efl.loggerChan)
-	<-efl.disposedChan
+	close(el.loggerChan)
+	<-el.disposedChan
 	return nil
 }
